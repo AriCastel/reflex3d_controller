@@ -23,9 +23,9 @@ from functions.acquisition import run_timelapse
 
 # ---- experiment parameters ----
 NUM_FRAMES = 50
-INTERVAL_S = 1
+INTERVAL_S = 5
 EXPOSURE_MS = 50
-LASER_POWER_MW = 5.0
+LASER_POWER_MW = 50.0
 
 
 def main():
