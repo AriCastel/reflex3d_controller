@@ -1,0 +1,94 @@
+{
+  "camera": {
+    "device_label": "Hamamatsu ORCA 4",
+    "model": "Hamamatsu Orca Flash 4.0",
+    "readout_mode": "normal",
+    "bit_depth": 16,
+    "default_exposure_ms": 50,
+    "pixel_size_um": 6.5
+  },
+
+  "laser": {
+    "device_label": "Cobolt MLD 488",
+    "power_property": "12-Power Setpoint [mW]",
+    "state_property": "10-Emission Status",
+    "wavelength_nm": 488,
+    "max_power_mW": 200,
+    "default_power_mW": 5.0
+  },
+
+
+  "stage": {
+    "xy_device_label": "Sutter MPC",
+    "z_device_label": "Sutter MPC",
+    "model": "Sutter Instruments piezo XYZ",
+    "units": "um"
+  },
+
+  "micromanipulator": {
+    "device_label": "Sutter MPC",
+    "home_position_um": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "work_position_um": { "x": 0.0, "y": 0.0, "z": 0.0 }
+  },
+
+  "slm": {
+    "model": "Meadowlark Optics 8-bit LC-SLM",
+    "monitor_index": 1,
+    "resolution": [1920, 11520],
+    "pixel_pitch_um": 9.2,
+    "bit_depth": 8,
+    "flat_value": 128,
+    "grey_level_2pi": 255,
+    "refresh_rate_hz": 30,
+    "settle_frames": 3,
+    "_comment": "grey_level_2pi is the grey level corresponding to a full 2*pi phase stroke, from the device phase calibration (LUT) - set this properly or every phase mask will be miscalibrated. settle_frames * (1/refresh_rate_hz) is how long the code waits after pushing a mask before snapping; 3 frames at 30 Hz = 100 ms, which covers both the frame period and liquid-crystal relaxation."
+  },
+
+  "fourier_plane": {
+    "radius_px": 400,
+    "NA": null,
+    "focal_length_mm": null,
+    "back_aperture_diameter_mm": null,
+    "channels": {
+      "left": {
+        "center_px": [null, null],
+        "calibrated_on": null,
+        "calibration_mode": null,
+        "calibration_run": null,
+        "_comment": "Polarization channel imaged onto the LEFT half of the camera sensor."
+      },
+      "right": {
+        "center_px": [null, null],
+        "calibrated_on": null,
+        "calibration_mode": null,
+        "calibration_run": null,
+        "_comment": "Polarization channel imaged onto the RIGHT half of the camera sensor."
+      }
+    },
+    "_comment": "radius_px is the pupil radius on the SLM, in SLM pixels, treated as known. center_px is [x, y] in SLM pixels and is written by experiments/fourier_plane_alignment.py - one entry per polarization channel, since the two channels have distinct Fourier planes on the same SLM."
+  },
+
+  "fourier_alignment": {
+    "step_px": 40,
+    "patch_diameter_px": 240,
+    "amplitude_rad_by_mode": {
+      "tilt_x": 6.283185307179586,
+      "tilt_y": 6.283185307179586,
+      "defocus": 3.141592653589793
+    },
+    "localization_method": "frame_centroid",
+    "exposure_ms": 100,
+    "laser_power_mW": 5.0,
+    "support_fraction": 0.15,
+    "_comment": "patch_diameter_px should be a fraction of the pupil diameter (roughly the pupil RADIUS is a good starting point) so the patch can partially overlap the pupil - that partial overlap is what carries the signal. Amplitudes are peak-to-valley phase across the patch: tilt tolerates a full 2*pi, but defocus works best near pi, because a 2*pi defocus stroke scatters light so broadly that the centroid stops tracking it. Tune both on the real instrument."
+  },
+
+  "acquisition_defaults": {
+    "root_folder": "D:/ReflEx3D_Data",
+    "timelapse": {
+      "num_frames": 50,
+      "interval_s": 2.0,
+      "exposure_ms": 50
+    }
+  }
+}

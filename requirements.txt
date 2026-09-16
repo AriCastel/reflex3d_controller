@@ -1,0 +1,7 @@
+pycromanager
+numpy
+tifffile
+pillow
+screeninfo
+scipy
+matplotlib
