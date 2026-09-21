@@ -1,8 +1,14 @@
 """
-functions/camera.py
+functions/camera.py (legacy, pycromanager)
 
-General-purpose camera control via the Micro-Manager core. Never
-writes to disk — that's core/file_io.py's job.
+General-purpose camera control via the Micro-Manager core, addressed
+through pycromanager's `Core`. Never writes to disk — that's
+core/file_io.py's job.
+
+Kept for the existing MM-GUI-driven workflow. The pymmcore-plus
+equivalent (a bare CMMCorePlus instance, which already exposes
+`setExposure`/`snap` directly) is used instead by the `*_mda`
+experiments - see core/mmcore.py.
 """
 import numpy as np
 

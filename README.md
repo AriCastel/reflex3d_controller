@@ -1,8 +1,17 @@
 # ReflEx3D microscope controller — base code
 
-Controls the microscope through a running Micro-Manager instance via
-`pycromanager`, with an SLM addressed directly as a secondary
-display.
+Controls the microscope through a running Micro-Manager instance.
+
+The codebase is migrating from `pycromanager` to
+[`pymmcore-plus`](https://github.com/pymmcore-plus/pymmcore-plus) /
+[`napari-micromanager`](https://github.com/pymmcore-plus/napari-micromanager) /
+[`pymmcore-widgets`](https://github.com/pymmcore-plus/pymmcore-widgets), for
+better performance and to enable real-time image processing during
+acquisition. The `pycromanager` code isn't removed by this migration —
+it's kept as **legacy** (see "Legacy vs. pymmcore-plus" below) while
+new experiments move to the pymmcore-plus stack. Either way, the SLM
+is addressed directly as a secondary display, not through
+Micro-Manager.
 
 ## Layout
 
@@ -13,16 +22,25 @@ core/                            General infrastructure — never experiment-spe
   session.py                       Creates the run folder for each experiment
   logging_setup.py                 One log file per run folder
   file_io.py                       Sole authority for disk writes (TIFF + metadata)
+  mmcore.py                        Builds a CMMCorePlus instance from the
+                                    "pymmcore_plus" config section
 functions/                       General-purpose hardware control + orchestration
-  laser.py                         Laser on/off/power
-  camera.py                        Exposure + snap
+  laser.py                         (legacy, pycromanager) Laser on/off/power
+  mmcore_laser.py                  pymmcore-plus equivalent of laser.py
+  camera.py                        (legacy, pycromanager) Exposure + snap
   slm.py                           Phase mask generation + fullscreen display
-  acquisition.py                   Orchestration routines (e.g. run_timelapse)
+                                    (hardware-agnostic; used by both stacks)
+  acquisition.py                   Orchestration routines: run_timelapse (legacy)
+                                    and build_timelapse_sequence/run_timelapse_mda
+                                    (pymmcore-plus MDA)
+  napari_preview.py                Live napari preview layer for MDA runs
 functions/zernike.py             Zernike polynomials (reused for AO later)
 functions/phase_masks.py         Zernike probe patches, raster positions
 functions/localization.py        Point-source centroid localization
 experiments/                     Minimal scripts: parameters + function calls only
-  example_timelapse.py             First example: flat-mask timelapse -> TIFF
+  example_timelapse.py             (legacy, pycromanager) flat-mask timelapse -> TIFF
+  example_timelapse_mda.py         Same timelapse via pymmcore-plus's MDA engine,
+                                    with a live napari preview
   fourier_plane_alignment.py       Locates the pupil centre on the SLM
 calibration/                     Infrequent, complex routines
   fourier_alignment.py             Fourier-plane alignment acquisition
@@ -30,6 +48,24 @@ calibration/                     Infrequent, complex routines
   map_preview.py                   Preview figure builder
 gui/                              (empty for now) tkinter UI, fully isolated
 ```
+
+## Legacy vs. pymmcore-plus
+
+`experiments/example_timelapse.py` and the modules it calls
+(`functions/laser.py`, `functions/camera.py`,
+`functions/acquisition.py`'s `run_timelapse`) go through `pycromanager`'s
+`Core`, which proxies a running Micro-Manager GUI instance. They're
+unchanged by this migration and stay as the "legacy" path.
+
+`experiments/example_timelapse_mda.py` and its equivalents
+(`core/mmcore.py`, `functions/mmcore_laser.py`,
+`functions/acquisition.py`'s `build_timelapse_sequence`/`run_timelapse_mda`,
+`functions/napari_preview.py`) instead build a `CMMCorePlus` instance
+directly (no separate Micro-Manager GUI process needed), run the
+acquisition through pymmcore-plus's MDA engine, and stream frames live
+into a napari viewer. New experiments should generally use this path;
+`functions/slm.py` is unchanged and shared by both, since it never
+touches `core`/Micro-Manager at all.
 
 The rule that keeps this maintainable: `experiments/*.py` files
 should never contain hardware-control logic directly — only
@@ -56,11 +92,16 @@ doesn't change.
 4. `fourier_plane` is unused by the base timelapse experiment — it's
    there for the upcoming phase-mask-generation code (EDOF, Zernike
    terms, etc.) so those numbers live in one place from the start.
+5. **For the pymmcore-plus path only**, fill in `pymmcore_plus.device_adapter_path`
+   (folder containing your Micro-Manager device adapter DLLs/.so files) and
+   `pymmcore_plus.system_config_path` (the `.cfg` hardware configuration
+   file) — these replace the running Micro-Manager GUI instance that the
+   legacy `pycromanager` path connects to.
 
 ## Running the example experiment
 
-With Micro-Manager open and connected to the hardware, and the SLM's
-display active as a secondary monitor:
+**Legacy (pycromanager):** with Micro-Manager open and connected to the
+hardware, and the SLM's display active as a secondary monitor:
 
 ```
 pip install -r requirements.txt
@@ -72,6 +113,21 @@ This displays a flat/neutral phase mask on the SLM, records a
 constants at the top of the script to change this), and writes
 `timelapse.tif` (TZCYX ImageJ hyperstack) plus a metadata JSON
 sidecar into a new run folder under `acquisition_defaults.root_folder`.
+
+**pymmcore-plus, with a live napari preview:** no separate
+Micro-Manager GUI process needed — `core/mmcore.py` builds the core
+directly from `pymmcore_plus.device_adapter_path`/`system_config_path`.
+With the SLM's display active as a secondary monitor:
+
+```
+pip install -r requirements.txt
+python -m experiments.example_timelapse_mda
+```
+
+This runs the same flat-mask, 50-frame timelapse, but through
+pymmcore-plus's MDA engine (`mmc.run_mda`) instead of a manual snap
+loop, and opens a napari viewer that fills in live as each frame is
+acquired. Close the viewer window to end the run.
 
 ## Adding a new experiment
 

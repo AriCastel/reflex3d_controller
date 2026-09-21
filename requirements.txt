@@ -5,3 +5,13 @@ pillow
 screeninfo
 scipy
 matplotlib
+
+# pymmcore-plus / napari-micromanager stack (see config/microscope_config.json's
+# "pymmcore_plus" section and experiments/*_mda.py) - pycromanager above is kept
+# for the legacy MM-GUI-driven workflow, unaffected by this migration.
+pymmcore-plus
+pymmcore-widgets
+napari-micromanager
+napari[pyqt]
+useq-schema
+superqt

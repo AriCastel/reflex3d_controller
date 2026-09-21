@@ -90,5 +90,11 @@
       "interval_s": 2.0,
       "exposure_ms": 50
     }
+  },
+
+  "pymmcore_plus": {
+    "device_adapter_path": "C:/Program Files/Micro-Manager-2.0",
+    "system_config_path": "C:/Program Files/Micro-Manager-2.0/MMConfig_demo.cfg",
+    "_comment": "New pymmcore-plus / napari-micromanager stack, used by core/mmcore.py and the *_mda experiments - the pycromanager code elsewhere in this config and codebase is unaffected and kept as legacy. device_adapter_path is the folder containing the MM device adapter DLLs/.so files (passed to CMMCorePlus.setDeviceAdapterSearchPaths); system_config_path is the .cfg hardware configuration file (passed to CMMCorePlus.loadSystemConfiguration). Point both at your real Micro-Manager installation and hardware config before running the pymmcore-plus experiments."
   }
 }
