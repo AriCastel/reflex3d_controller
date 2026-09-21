@@ -1,8 +1,13 @@
 """
-functions/laser.py
+functions/laser.py (legacy, pycromanager)
 
-General-purpose laser control via the Micro-Manager core. Never
-writes to disk — that's core/file_io.py's job.
+General-purpose laser control via the Micro-Manager core, addressed
+through pycromanager's `Core` (whose Java-proxy translates these
+snake_case names to `setProperty` etc.). Never writes to disk —
+that's core/file_io.py's job.
+
+Kept for the existing MM-GUI-driven workflow. functions/mmcore_laser.py
+has the pymmcore-plus equivalent, used by the `*_mda` experiments.
 """
 
 

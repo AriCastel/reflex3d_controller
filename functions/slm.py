@@ -1,5 +1,5 @@
 """
-functions/slm.py
+functions/slm.py (legacy, pycromanager stack)
 
 General-purpose SLM control: phase mask generation and fullscreen
 display on the SLM's secondary monitor. Never writes to disk.
@@ -9,6 +9,9 @@ Micro-Manager), via a persistent, borderless tkinter window
 positioned with screeninfo. Keeping the window persistent (rather
 than recreating it per-frame) means the mask can be swapped out with
 `show_mask()` mid-experiment without any visible flicker/reposition.
+
+Doesn't touch `core`/pycromanager at all, so it's reused as-is by the
+pymmcore-plus `*_mda` experiments too.
 """
 import numpy as np
 from PIL import Image, ImageTk
