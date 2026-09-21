@@ -34,6 +34,7 @@
   "slm": {
     "model": "Meadowlark Optics 8-bit LC-SLM",
     "monitor_index": 1,
+    "device_label": "SLM",
     "resolution": [1920, 11520],
     "pixel_pitch_um": 9.2,
     "bit_depth": 8,
@@ -41,7 +42,7 @@
     "grey_level_2pi": 255,
     "refresh_rate_hz": 30,
     "settle_frames": 3,
-    "_comment": "grey_level_2pi is the grey level corresponding to a full 2*pi phase stroke, from the device phase calibration (LUT) - set this properly or every phase mask will be miscalibrated. settle_frames * (1/refresh_rate_hz) is how long the code waits after pushing a mask before snapping; 3 frames at 30 Hz = 100 ms, which covers both the frame period and liquid-crystal relaxation."
+    "_comment": "monitor_index is used only by the legacy pycromanager path (functions/slm.py's SLMDisplay, a plain secondary-display window). device_label is used only by the pymmcore-plus path (functions/mmcore_slm.py's MMCoreSLM) - it's the Micro-Manager device label for the Generic SLM ('Spatial light modulator controlled through computer graphics') device in your MM hardware config, and must match exactly. resolution must match that device's resolution too (checked at runtime by MMCoreSLM; a mismatch raises an error). grey_level_2pi is the grey level corresponding to a full 2*pi phase stroke, from the device phase calibration (LUT) - set this properly or every phase mask will be miscalibrated. settle_frames * (1/refresh_rate_hz) is how long the code waits after pushing a mask before snapping; 3 frames at 30 Hz = 100 ms, which covers both the frame period and liquid-crystal relaxation."
   },
 
   "fourier_plane": {
