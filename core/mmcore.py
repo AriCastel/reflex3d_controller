@@ -27,4 +27,10 @@ def load_mmcore(config):
         mmc.setDeviceAdapterSearchPaths([device_adapter_path])
     if system_config_path:
         mmc.loadSystemConfiguration(system_config_path)
+
+    device_labels = mmc.getLoadedDevices()
+
+    for label in device_labels:
+        print(label)
+
     return mmc

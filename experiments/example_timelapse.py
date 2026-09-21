@@ -22,8 +22,8 @@ from functions.slm import SLMDisplay, flat_mask
 from functions.acquisition import run_timelapse
 
 # ---- experiment parameters ----
-NUM_FRAMES = 50
-INTERVAL_S = 5
+NUM_FRAMES = 10
+INTERVAL_S = 0
 EXPOSURE_MS = 50
 LASER_POWER_MW = 50.0
 

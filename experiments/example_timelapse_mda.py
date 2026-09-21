@@ -30,8 +30,8 @@ from functions.acquisition import run_timelapse_mda
 
 # ---- experiment parameters ----
 NUM_FRAMES = 50
-INTERVAL_S = 5
-EXPOSURE_MS = 50
+INTERVAL_S = 0
+EXPOSURE_MS = 100
 LASER_POWER_MW = 50.0
 
 
