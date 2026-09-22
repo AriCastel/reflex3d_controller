@@ -11,13 +11,15 @@ This script should stay minimal — only parameters and function calls.
 All actual logic lives in core/ and functions/. Run it with a real
 Micro-Manager device adapter + system config pointed to by
 `pymmcore_plus.device_adapter_path` / `pymmcore_plus.system_config_path`
-in config/microscope_config.json (and the SLM's virtual/secondary
-display already available):
+in config/microscope_config.json, with the Generic SLM device
+(`slm.device_label`) loaded in that system config:
 
     python -m experiments.example_timelapse_mda
 
 The original pycromanager-driven script (experiments/example_timelapse.py)
-is kept as-is for the existing MM-GUI-driven workflow.
+is kept as-is for the existing MM-GUI-driven workflow, including its
+plain-secondary-display SLM handling — the SLM here goes through
+Micro-Manager instead (functions/mmcore_slm.py's MMCoreSLM).
 """
 import napari
 
@@ -25,7 +27,8 @@ from core.config import load_config
 from core.session import Session
 from core.logging_setup import setup_logger
 from core.mmcore import load_mmcore
-from functions.slm import SLMDisplay, flat_mask
+from functions.slm import flat_mask
+from functions.mmcore_slm import MMCoreSLM
 from functions.acquisition import run_timelapse_mda
 
 # ---- experiment parameters ----
@@ -46,7 +49,7 @@ def main():
 
     viewer = napari.Viewer(title="ReflEx3D — live timelapse preview")
 
-    with SLMDisplay(config) as slm:
+    with MMCoreSLM(mmc, config) as slm:
         slm.show_mask(flat_mask(config))
         logger.info("Flat phase mask displayed on SLM.")
 

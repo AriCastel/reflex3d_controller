@@ -9,9 +9,11 @@ The codebase is migrating from `pycromanager` to
 better performance and to enable real-time image processing during
 acquisition. The `pycromanager` code isn't removed by this migration —
 it's kept as **legacy** (see "Legacy vs. pymmcore-plus" below) while
-new experiments move to the pymmcore-plus stack. Either way, the SLM
-is addressed directly as a secondary display, not through
-Micro-Manager.
+new experiments move to the pymmcore-plus stack. The legacy path still
+addresses the SLM directly as a secondary display; the pymmcore-plus
+path addresses it as a proper Micro-Manager device instead (the
+"Generic SLM: Spatial light modulator controlled through computer
+graphics" device), through `CMMCorePlus`.
 
 ## Layout
 
@@ -28,8 +30,10 @@ functions/                       General-purpose hardware control + orchestratio
   laser.py                         (legacy, pycromanager) Laser on/off/power
   mmcore_laser.py                  pymmcore-plus equivalent of laser.py
   camera.py                        (legacy, pycromanager) Exposure + snap
-  slm.py                           Phase mask generation + fullscreen display
-                                    (hardware-agnostic; used by both stacks)
+  slm.py                           Phase mask generation (hardware-agnostic,
+                                    shared) + (legacy) secondary-display window
+  mmcore_slm.py                    pymmcore-plus equivalent of SLMDisplay:
+                                    addresses the SLM as a Micro-Manager device
   acquisition.py                   Orchestration routines: run_timelapse (legacy)
                                     and build_timelapse_sequence/run_timelapse_mda
                                     (pymmcore-plus MDA)
@@ -58,14 +62,17 @@ gui/                              (empty for now) tkinter UI, fully isolated
 unchanged by this migration and stay as the "legacy" path.
 
 `experiments/example_timelapse_mda.py` and its equivalents
-(`core/mmcore.py`, `functions/mmcore_laser.py`,
+(`core/mmcore.py`, `functions/mmcore_laser.py`, `functions/mmcore_slm.py`,
 `functions/acquisition.py`'s `build_timelapse_sequence`/`run_timelapse_mda`,
 `functions/napari_preview.py`) instead build a `CMMCorePlus` instance
 directly (no separate Micro-Manager GUI process needed), run the
 acquisition through pymmcore-plus's MDA engine, and stream frames live
-into a napari viewer. New experiments should generally use this path;
-`functions/slm.py` is unchanged and shared by both, since it never
-touches `core`/Micro-Manager at all.
+into a napari viewer. New experiments should generally use this path.
+`functions/slm.py`'s `flat_mask` (pure numpy) is shared by both stacks,
+but its `SLMDisplay` (a plain secondary-display window) is legacy-only:
+the pymmcore-plus path uses `functions/mmcore_slm.py`'s `MMCoreSLM`
+instead, which addresses the SLM as a Micro-Manager device through
+`mmc` rather than opening its own window.
 
 The rule that keeps this maintainable: `experiments/*.py` files
 should never contain hardware-control logic directly — only
@@ -83,10 +90,10 @@ doesn't change.
    `laser.device_label` and `camera.device_label` against your
    Micro-Manager config too — they're filled in with the SPIM2by2
    defaults but device labels can vary between MM config files.
-2. **Check `slm.monitor_index`.** This is the index into
-   `screeninfo.get_monitors()` for the SLM's monitor — it depends on
-   OS display ordering, not on Micro-Manager, so confirm it on the
-   actual acquisition PC.
+2. **For the legacy path**, check `slm.monitor_index`. This is the
+   index into `screeninfo.get_monitors()` for the SLM's monitor — it
+   depends on OS display ordering, not on Micro-Manager, so confirm it
+   on the actual acquisition PC.
 3. **Set `acquisition_defaults.root_folder`** to wherever you want
    run folders written.
 4. `fourier_plane` is unused by the base timelapse experiment — it's
@@ -96,7 +103,13 @@ doesn't change.
    (folder containing your Micro-Manager device adapter DLLs/.so files) and
    `pymmcore_plus.system_config_path` (the `.cfg` hardware configuration
    file) — these replace the running Micro-Manager GUI instance that the
-   legacy `pycromanager` path connects to.
+   legacy `pycromanager` path connects to. Also add a "Generic SLM:
+   Spatial light modulator controlled through computer graphics"
+   device to that MM hardware config, positioned as a fullscreen
+   window on the SLM's monitor, and check `slm.device_label` matches
+   its device label exactly. `slm.resolution` must match that
+   device's resolution too — `MMCoreSLM` checks this at runtime and
+   raises an error on a mismatch.
 
 ## Running the example experiment
 
@@ -116,8 +129,9 @@ sidecar into a new run folder under `acquisition_defaults.root_folder`.
 
 **pymmcore-plus, with a live napari preview:** no separate
 Micro-Manager GUI process needed — `core/mmcore.py` builds the core
-directly from `pymmcore_plus.device_adapter_path`/`system_config_path`.
-With the SLM's display active as a secondary monitor:
+directly from `pymmcore_plus.device_adapter_path`/`system_config_path`,
+with the Generic SLM device (`slm.device_label`) loaded as part of
+that system config:
 
 ```
 pip install -r requirements.txt

@@ -10,8 +10,12 @@ positioned with screeninfo. Keeping the window persistent (rather
 than recreating it per-frame) means the mask can be swapped out with
 `show_mask()` mid-experiment without any visible flicker/reposition.
 
-Doesn't touch `core`/pycromanager at all, so it's reused as-is by the
-pymmcore-plus `*_mda` experiments too.
+`flat_mask` is pure numpy and hardware-agnostic, so it's reused as-is
+by the pymmcore-plus stack. `SLMDisplay` itself is legacy-only, since
+it doesn't touch Micro-Manager at all (not even through pycromanager);
+`functions/mmcore_slm.py`'s `MMCoreSLM` is the pymmcore-plus
+equivalent, addressing the SLM as a proper Micro-Manager device
+instead of a plain secondary display.
 """
 import numpy as np
 from PIL import Image, ImageTk
