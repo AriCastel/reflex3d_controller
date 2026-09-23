@@ -215,7 +215,6 @@ def acquire_d2_map(
                 if progress_every and k % progress_every == 0:
                     frac = k / n_pos
                     elapsed = time.time() - t_start
-    finished_at = datetime.now().isoformat(sep=" ", timespec="seconds")
                     remaining = elapsed / frac - elapsed
                     logger.info(
                         f"  {k}/{n_pos} ({100 * frac:.0f}%) — "
@@ -227,6 +226,7 @@ def acquire_d2_map(
         slm.show_mask(flat_mask(config))
 
     elapsed = time.time() - t_start
+    finished_at = datetime.now().isoformat(sep=" ", timespec="seconds")
     logger.info(
         f"Raster complete in {format_duration(elapsed)}; "
         f"{n_failed}/{n_pos} positions failed localization."
