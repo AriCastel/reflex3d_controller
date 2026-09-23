@@ -29,6 +29,7 @@ Nothing here writes to disk — frames, maps and metadata are returned
 to the caller, which routes all saving through core/file_io.py.
 """
 import time
+from datetime import datetime
 
 import numpy as np
 
@@ -214,6 +215,7 @@ def acquire_d2_map(
                 if progress_every and k % progress_every == 0:
                     frac = k / n_pos
                     elapsed = time.time() - t_start
+    finished_at = datetime.now().isoformat(sep=" ", timespec="seconds")
                     remaining = elapsed / frac - elapsed
                     logger.info(
                         f"  {k}/{n_pos} ({100 * frac:.0f}%) — "
@@ -253,6 +255,7 @@ def acquire_d2_map(
         "n_positions": n_pos,
         "n_failed_localizations": n_failed,
         "elapsed_s": elapsed,
+        "timestamp": finished_at,
         "x_range": x_range,
         "y_range": y_range,
     }
