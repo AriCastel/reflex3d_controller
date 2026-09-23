@@ -5,8 +5,10 @@ Acquisition side of the Fourier-plane alignment procedure.
 
 Procedure
 ---------
-1. Verify a point source (microsphere) is visible and localizable,
-   with a flat mask on the SLM.
+0. Show a live full-frame preview with every channel's camera ROI
+   outlined (flat mask on the SLM), so the sample can be positioned.
+1. Verify a point source (microsphere) is visible and localizable
+   inside the chosen channel's ROI, with a flat mask on the SLM.
 2. Raster a circular Zernike probe patch across the whole SLM. At each
    position, display the patch with +amplitude, snap; display it with
    -amplitude, snap. Localize the point source in both frames and
@@ -17,6 +19,12 @@ Sign convention: +amplitude ramps 0 -> 2*pi across the patch,
 -amplitude ramps 2*pi -> 0. The PSF shift reverses with the sign, so
 d^2 measures how strongly the patch is acting as a tilt on the pupil.
 
+Hardware goes through pymmcore-plus: `mmc` is a CMMCorePlus instance
+and `slm` a functions/mmcore_slm.py MMCoreSLM. The raster is a plain
+mask -> settle -> snap loop rather than an MDA sequence, because the
+MDA engine snaps straight after displaying an SLM image (no settle
+time) and only logs a warning if setting the image fails.
+
 Nothing here writes to disk — frames, maps and metadata are returned
 to the caller, which routes all saving through core/file_io.py.
 """
@@ -24,11 +32,11 @@ import time
 
 import numpy as np
 
-from functions.camera import set_exposure, snap_image
-from functions.laser import laser_off, laser_on, set_laser_power
 from functions.localization import localize_psf, squared_separation
-from functions.phase_masks import raster_positions, zernike_patch_mask
-from functions.slm import flat_mask
+from functions.mmcore_camera import get_all_channel_rois
+from functions.mmcore_laser import laser_off_mmcore, laser_on_mmcore, set_laser_power_mmcore
+from functions.napari_preview import run_live_roi_preview
+from functions.phase_masks import flat_mask, raster_positions, zernike_patch_mask
 from functions.zernike import MODE_INDICES
 
 
@@ -63,25 +71,55 @@ def format_duration(seconds):
     return f"{s} s"
 
 
-def verify_point_source(core, config, slm, logger, exposure_ms,
+def preview_sample_positioning(mmc, config, slm, logger, exposure_ms,
+                               laser_power_mW):
+    """
+    Live full-frame preview with every channel's ROI outlined, so the
+    scientist can check the sample is positioned before acquisition.
+    A flat mask is displayed first - with a probe or leftover mask on
+    the SLM the preview wouldn't show the unaberrated sample. Blocks
+    until the preview window is closed.
+    """
+    rois = get_all_channel_rois(config)
+    slm.show_mask(flat_mask(config))
+    time.sleep(slm_settle_seconds(config))
+
+    mmc.setExposure(exposure_ms)
+    set_laser_power_mmcore(mmc, config, laser_power_mW)
+    laser_on_mmcore(mmc, config)
+    logger.info(
+        "Live ROI preview open (flat mask on the SLM). Close the window "
+        "once the sample is positioned."
+    )
+    try:
+        run_live_roi_preview(
+            mmc, rois,
+            title="ReflEx3D — position the sample, then close this window",
+        )
+    finally:
+        laser_off_mmcore(mmc, config)
+    logger.info("Live ROI preview closed.")
+
+
+def verify_point_source(mmc, config, slm, logger, exposure_ms,
                         laser_power_mW, localization_method):
     """
     Snap one frame with a flat mask so the scientist can confirm the
     point source is visible and correctly localized before committing
-    to a long raster.
+    to a long raster. The camera ROI must already be set.
 
     Returns (frame, localization_or_None).
     """
     slm.show_mask(flat_mask(config))
     time.sleep(slm_settle_seconds(config))
 
-    set_exposure(core, exposure_ms)
-    set_laser_power(core, config, laser_power_mW)
-    laser_on(core, config)
+    mmc.setExposure(exposure_ms)
+    set_laser_power_mmcore(mmc, config, laser_power_mW)
+    laser_on_mmcore(mmc, config)
     try:
-        frame = snap_image(core)
+        frame = mmc.snap()
     finally:
-        laser_off(core, config)
+        laser_off_mmcore(mmc, config)
 
     loc = localize_psf(frame, method=localization_method)
     if loc is None:
@@ -97,7 +135,7 @@ def verify_point_source(core, config, slm, logger, exposure_ms,
 
 
 def acquire_d2_map(
-    core,
+    mmc,
     config,
     slm,
     logger,
@@ -143,9 +181,9 @@ def acquire_d2_map(
         f"{format_duration(estimate_duration_s(config, n_pos, exposure_ms))}"
     )
 
-    set_exposure(core, exposure_ms)
-    set_laser_power(core, config, laser_power_mW)
-    laser_on(core, config)
+    mmc.setExposure(exposure_ms)
+    set_laser_power_mmcore(mmc, config, laser_power_mW)
+    laser_on_mmcore(mmc, config)
 
     d2_map = np.full((len(y_centers), len(x_centers)), np.nan)
     n_failed = 0
@@ -164,8 +202,7 @@ def acquire_d2_map(
                     slm.show_mask(mask)
                     time.sleep(settle)
                     locs.append(
-                        localize_psf(snap_image(core),
-                                     method=localization_method)
+                        localize_psf(mmc.snap(), method=localization_method)
                     )
 
                 d2 = squared_separation(locs[0], locs[1])
@@ -184,7 +221,7 @@ def acquire_d2_map(
                         f"{n_failed} failed so far"
                     )
     finally:
-        laser_off(core, config)
+        laser_off_mmcore(mmc, config)
         slm.show_mask(flat_mask(config))
 
     elapsed = time.time() - t_start
@@ -211,6 +248,7 @@ def acquire_d2_map(
         "slm_settle_s": settle,
         "slm_refresh_rate_hz": config.get("slm", "refresh_rate_hz"),
         "slm_resolution": config.get("slm", "resolution"),
+        "camera_roi_xywh": list(mmc.getROI()),
         "pupil_radius_px_assumed": config.get("fourier_plane", "radius_px"),
         "n_positions": n_pos,
         "n_failed_localizations": n_failed,

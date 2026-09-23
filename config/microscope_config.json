@@ -5,7 +5,12 @@
     "readout_mode": "normal",
     "bit_depth": 16,
     "default_exposure_ms": 50,
-    "pixel_size_um": 6.5
+    "pixel_size_um": 6.5,
+    "channel_rois": {
+      "left": { "position_px": [256, 768], "size_px": 512 },
+      "right": { "position_px": [1280, 768], "size_px": 512 },
+      "_comment": "Square camera ROI for each polarization channel, in full-frame camera pixels. position_px is the ROI's TOP-LEFT corner [x, y] (the same convention as Micro-Manager's ROI x/y), size_px its side length. A channel always lands on the same part of the sensor, so set these once: experiments/fourier_plane_alignment.py shows them as boxes on a live full-frame preview before acquiring, which is the easiest way to check and tune them. The defaults are placeholders centred on each half of a 2048x2048 sensor."
+    }
   },
 
   "laser": {

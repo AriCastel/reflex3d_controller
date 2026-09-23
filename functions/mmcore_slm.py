@@ -49,7 +49,9 @@ class MMCoreSLM:
 
     def show_mask(self, mask_array):
         """Push a new uint8 (H, W) mask array to the SLM and display it."""
-        pixels = np.ascontiguousarray(mask_array, dtype=np.uint8).flatten()
+        # Kept 2D: the C++ core only checks the byte count, but Python
+        # (UniMMCore) SLM devices require the exact (height, width) shape.
+        pixels = np.ascontiguousarray(mask_array, dtype=np.uint8)
         self.mmc.setSLMImage(self.label, pixels)
         self.mmc.displaySLMImage(self.label)
 
