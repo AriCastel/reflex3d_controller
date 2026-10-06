@@ -41,7 +41,10 @@ functions/                       General-purpose hardware control + orchestratio
   napari_preview.py                napari viewers: live MDA preview, live
                                     full-frame preview with channel ROI boxes,
                                     verification frame
-functions/zernike.py             Zernike polynomials (reused for AO later)
+functions/zernike.py             Zernike polynomials (incl. Noll-indexed, RMS-normalized)
+functions/psf_metrics.py         Guide-star PSF metrics for AO (pluggable registry)
+functions/adaptive_optics.py     Pupil Zernike masks, guide-star camera, SPSA optimizer,
+                                  results figure
 functions/phase_masks.py         Flat masks, Zernike probe patches, raster positions
 functions/localization.py        Point-source centroid localization
 experiments/                     Minimal scripts: parameters + function calls only
@@ -49,6 +52,7 @@ experiments/                     Minimal scripts: parameters + function calls on
   example_timelapse_mda.py         Same timelapse via pymmcore-plus's MDA engine,
                                     with a live napari preview
   fourier_plane_alignment.py       Locates the pupil centre on the SLM (pymmcore-plus)
+  aberration_correction.py         Sensorless AO on a guide star (pymmcore-plus)
 calibration/                     Infrequent, complex routines
   fourier_alignment.py             Fourier-plane alignment acquisition
   map_analysis.py                  Centre estimation from the d^2 map
@@ -59,6 +63,8 @@ tests/
                                     write-back on a simulated pymmcore-plus
                                     microscope (python tests/e2e_test.py)
   sim_validate.py                  Centre recovery on a simulated pupil
+  ao_sim_test.py                   Aberration correction on a simulated microscope
+                                    with a known aberration (python tests/ao_sim_test.py)
 ```
 
 ## Legacy vs. pymmcore-plus
@@ -239,3 +245,43 @@ including when it's aborted.
 * The raw map (`.npz` + `.csv`) is saved immediately after the raster,
   *before* you approve anything, so a long acquisition is never lost
   to a rejected fit. It can be re-analysed without re-acquiring.
+
+
+## Aberration correction (sensorless adaptive optics)
+
+`experiments/aberration_correction.py` corrects one channel's aberrations
+on a guide star (an isolated microsphere). The SLM phase over that
+channel's pupil is a sum of Zernike modes (Noll order, RMS-normalized,
+so coefficients are radians RMS), and the coefficients are optimized by
+**SPSA**, a stochastic gradient descent: each iteration probes one random
++/-1 direction in coefficient space with two snaps, F(a + c*delta) and
+F(a - c*delta), whatever the number of modes. Settings live in the
+`adaptive_optics` config section.
+
+Flow: the live ROI preview (as in the alignment) -> choose the channel
+(its Fourier-plane centre must already be calibrated) -> confirm the
+guide star -> the camera is cropped to a small square around it, a dark
+frame is taken -> optimize -> the flat and corrected masks are snapped
+back to back. The run folder gets `ao_correction.png` (metric vs
+iteration, original vs corrected PSF, final phase mask, coefficients),
+`ao_correction.npz` and `ao_correction_metadata.json` (coefficients by
+Noll index), and the coefficients are printed.
+
+* **Metrics are pluggable.** They live in `functions/psf_metrics.py`; lower
+  is always better. Write a small class with `__call__(image)` (and
+  optionally `set_reference(image)`, called with the uncorrected PSF),
+  add it to `METRICS`, and select it by name in
+  `adaptive_optics.metric`. The default, `power_weighted_second_moment`,
+  is the previous implementation's second moment multiplied by
+  (reference power / current power), so losing light is penalized;
+  `encircled_energy` and `sharpness` are also power-aware.
+  `second_moment` (power-blind) is kept for comparison.
+* **Photon budget.** Two snaps per iteration (the metric at the current
+  point is the mean of the two), a small guide-star ROI for fast
+  readout, a precomputed Zernike basis, and early stopping
+  (`patience`). Each iteration costs about 2 x (SLM settle + exposure),
+  ~0.3 s with the default 100 ms settle and 20 ms exposure.
+* **Tuning.** In simulation, `gain` 0.1 converged in ~30-50 iterations;
+  0.5 overshot badly first and took ~3x longer. `blank_laser_during_settle`
+  switches the laser off while the SLM settles, cutting illumination
+  ~in half, if the laser switches cleanly and fast.

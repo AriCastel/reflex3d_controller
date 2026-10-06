@@ -144,3 +144,30 @@ def write_fourier_center(config_path, channel, center_xy, extra=None):
         json.dump(data, f, indent=2)
 
     return config_path, backup_path
+
+
+def save_ao_result(run_folder, result, metadata, basename="ao_correction"):
+    """
+    Save an aberration-correction run: an .npz with the arrays (final
+    coefficients, per-iteration metric and coefficients, PSFs, phase)
+    and a metadata .json, which also lists the final coefficients by
+    Noll index so they're readable without numpy.
+    """
+    run_folder = Path(run_folder)
+    history = result["history"]
+    npz_path = run_folder / f"{basename}.npz"
+    np.savez(
+        npz_path,
+        coefficients=np.asarray(result["coefficients"]),
+        iteration=np.asarray(history["iteration"]),
+        metric=np.asarray(history["metric"]),
+        coefficients_history=np.asarray(history["params"]),
+        reference_psf=result["reference_psf"],
+        original_psf=result["original_psf"],
+        corrected_psf=result["corrected_psf"],
+        phase=result["phase"],
+    )
+    meta_path = run_folder / f"{basename}_metadata.json"
+    with open(meta_path, "w") as f:
+        json.dump(metadata, f, indent=2, default=str)
+    return npz_path
