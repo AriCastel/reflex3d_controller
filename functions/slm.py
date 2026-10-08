@@ -10,28 +10,19 @@ positioned with screeninfo. Keeping the window persistent (rather
 than recreating it per-frame) means the mask can be swapped out with
 `show_mask()` mid-experiment without any visible flicker/reposition.
 
-`flat_mask` is pure numpy and hardware-agnostic, so it's reused as-is
-by the pymmcore-plus stack. `SLMDisplay` itself is legacy-only, since
-it doesn't touch Micro-Manager at all (not even through pycromanager);
-`functions/mmcore_slm.py`'s `MMCoreSLM` is the pymmcore-plus
-equivalent, addressing the SLM as a proper Micro-Manager device
-instead of a plain secondary display.
+`SLMDisplay` is legacy-only, since it doesn't touch Micro-Manager at
+all (not even through pycromanager); `functions/mmcore_slm.py`'s
+`MMCoreSLM` is the pymmcore-plus equivalent, addressing the SLM as a
+proper Micro-Manager device instead of a plain secondary display.
+`flat_mask` lives in functions/phase_masks.py (so the pymmcore-plus
+stack doesn't need tkinter) and is re-exported here for the legacy
+scripts.
 """
-import numpy as np
 from PIL import Image, ImageTk
 import tkinter as tk
 from screeninfo import get_monitors
 
-
-def flat_mask(config, value=None):
-    """
-    Build a neutral, flat phase mask: a uint8 array of constant grey
-    level, sized to the SLM's native resolution.
-    """
-    width, height = config.get("slm", "resolution", default=[1920, 1080])
-    if value is None:
-        value = config.get("slm", "flat_value", default=128)
-    return np.full((height, width), value, dtype=np.uint8)
+from functions.phase_masks import flat_mask  # noqa: F401
 
 
 class SLMDisplay:

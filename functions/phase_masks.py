@@ -14,6 +14,17 @@ import numpy as np
 from functions.zernike import mode_surface
 
 
+def flat_mask(config, value=None):
+    """
+    Build a neutral, flat phase mask: a uint8 array of constant grey
+    level, sized to the SLM's native resolution.
+    """
+    width, height = config.get("slm", "resolution", default=[1920, 1080])
+    if value is None:
+        value = config.get("slm", "flat_value", default=128)
+    return np.full((height, width), value, dtype=np.uint8)
+
+
 def phase_to_grey(phase_rad, grey_level_2pi):
     """
     Wrap a phase map into [0, 2*pi) and map it onto the SLM's 8-bit

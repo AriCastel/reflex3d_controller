@@ -30,27 +30,41 @@ functions/                       General-purpose hardware control + orchestratio
   laser.py                         (legacy, pycromanager) Laser on/off/power
   mmcore_laser.py                  pymmcore-plus equivalent of laser.py
   camera.py                        (legacy, pycromanager) Exposure + snap
-  slm.py                           Phase mask generation (hardware-agnostic,
-                                    shared) + (legacy) secondary-display window
+  mmcore_camera.py                 pymmcore-plus per-channel camera ROIs
+                                    (camera.channel_rois in the config)
+  slm.py                           (legacy) SLM as a secondary-display window
   mmcore_slm.py                    pymmcore-plus equivalent of SLMDisplay:
                                     addresses the SLM as a Micro-Manager device
   acquisition.py                   Orchestration routines: run_timelapse (legacy)
                                     and build_timelapse_sequence/run_timelapse_mda
                                     (pymmcore-plus MDA)
-  napari_preview.py                Live napari preview layer for MDA runs
-functions/zernike.py             Zernike polynomials (reused for AO later)
-functions/phase_masks.py         Zernike probe patches, raster positions
+  napari_preview.py                napari viewers: live MDA preview, live
+                                    full-frame preview with channel ROI boxes,
+                                    verification frame
+functions/zernike.py             Zernike polynomials (incl. Noll-indexed, RMS-normalized)
+functions/psf_metrics.py         Guide-star PSF metrics for AO (pluggable registry)
+functions/adaptive_optics.py     Pupil Zernike masks, guide-star camera, SPSA optimizer,
+                                  results figure
+functions/phase_masks.py         Flat masks, Zernike probe patches, raster positions
 functions/localization.py        Point-source centroid localization
 experiments/                     Minimal scripts: parameters + function calls only
   example_timelapse.py             (legacy, pycromanager) flat-mask timelapse -> TIFF
   example_timelapse_mda.py         Same timelapse via pymmcore-plus's MDA engine,
                                     with a live napari preview
-  fourier_plane_alignment.py       Locates the pupil centre on the SLM
+  fourier_plane_alignment.py       Locates the pupil centre on the SLM (pymmcore-plus)
+  aberration_correction.py         Sensorless AO on a guide star (pymmcore-plus)
 calibration/                     Infrequent, complex routines
   fourier_alignment.py             Fourier-plane alignment acquisition
   map_analysis.py                  Centre estimation from the d^2 map
   map_preview.py                   Preview figure builder
 gui/                              (empty for now) tkinter UI, fully isolated
+tests/
+  e2e_test.py                      Alignment acquisition -> analysis -> config
+                                    write-back on a simulated pymmcore-plus
+                                    microscope (python tests/e2e_test.py)
+  sim_validate.py                  Centre recovery on a simulated pupil
+  ao_sim_test.py                   Aberration correction on a simulated microscope
+                                    with a known aberration (python tests/ao_sim_test.py)
 ```
 
 ## Legacy vs. pymmcore-plus
@@ -68,11 +82,17 @@ unchanged by this migration and stay as the "legacy" path.
 directly (no separate Micro-Manager GUI process needed), run the
 acquisition through pymmcore-plus's MDA engine, and stream frames live
 into a napari viewer. New experiments should generally use this path.
-`functions/slm.py`'s `flat_mask` (pure numpy) is shared by both stacks,
-but its `SLMDisplay` (a plain secondary-display window) is legacy-only:
-the pymmcore-plus path uses `functions/mmcore_slm.py`'s `MMCoreSLM`
-instead, which addresses the SLM as a Micro-Manager device through
-`mmc` rather than opening its own window.
+`functions/slm.py`'s `SLMDisplay` (a plain secondary-display window) is
+legacy-only: the pymmcore-plus path uses `functions/mmcore_slm.py`'s
+`MMCoreSLM` instead, which addresses the SLM as a Micro-Manager device
+through `mmc` rather than opening its own window. `flat_mask` lives in
+`functions/phase_masks.py` and is shared by both.
+
+`experiments/fourier_plane_alignment.py` has been moved to the
+pymmcore-plus path outright (no legacy copy). Without the
+Micro-Manager GUI there's nowhere to draw the camera ROI by hand, so
+each channel's ROI is read from `camera.channel_rois` in the config
+and applied in code (`functions/mmcore_camera.py`).
 
 The rule that keeps this maintainable: `experiments/*.py` files
 should never contain hardware-control logic directly — only
@@ -99,6 +119,11 @@ doesn't change.
 4. `fourier_plane` is unused by the base timelapse experiment — it's
    there for the upcoming phase-mask-generation code (EDOF, Zernike
    terms, etc.) so those numbers live in one place from the start.
+   **Set `camera.channel_rois`** (a square ROI per polarization
+   channel: `position_px` = top-left `[x, y]`, `size_px` = side, in
+   full-frame camera pixels) before running the Fourier-plane
+   alignment. They only need setting once, since each channel always
+   lands on the same part of the sensor; the defaults are placeholders.
 5. **For the pymmcore-plus path only**, fill in `pymmcore_plus.device_adapter_path`
    (folder containing your Micro-Manager device adapter DLLs/.so files) and
    `pymmcore_plus.system_config_path` (the `.cfg` hardware configuration
@@ -166,13 +191,26 @@ localized in both frames, and the squared separation d^2 is recorded.
   centred), sitting inside a ring
 * either way d^2 -> 0 where the patch misses the pupil entirely
 
-Before running, select a ROI in Micro-Manager showing only one
-polarization channel with an isolated microsphere in it. The script
-asks which channel it is and which probe mode to use, shows you a
-verification frame to confirm the bead is localizable, rasters, then
-shows a preview of the map with the estimated centre. Only if you
-accept it does it write `fourier_plane.channels.<channel>.center_px`
-back into the config (backing the old config up first).
+The script runs on the pymmcore-plus stack, so no Micro-Manager GUI
+is needed, and it sets the camera ROI itself:
+
+1. A napari window streams the **full camera frame** live, with a flat
+   mask on the SLM and the laser at the alignment power, and each
+   channel's ROI from `camera.channel_rois` drawn as a labelled box.
+   Position the sample so an isolated microsphere sits inside the ROI
+   of the channel you want to align, then **close the window**.
+2. In the terminal, choose the channel and the probe mode, and confirm
+   the estimated acquisition time.
+3. The camera is cropped to that channel's ROI and a verification frame
+   is shown in napari with the localized bead circled. Close it and
+   confirm that the bead is correctly localized.
+4. The raster runs, then a preview of the map with the estimated centre
+   is shown. Only if you accept it does the script write
+   `fourier_plane.channels.<channel>.center_px` back into the config
+   (backing the old config up first).
+
+The camera ROI is cleared back to full frame when the script ends,
+including when it's aborted.
 
 ### Practical notes
 
@@ -207,3 +245,43 @@ back into the config (backing the old config up first).
 * The raw map (`.npz` + `.csv`) is saved immediately after the raster,
   *before* you approve anything, so a long acquisition is never lost
   to a rejected fit. It can be re-analysed without re-acquiring.
+
+
+## Aberration correction (sensorless adaptive optics)
+
+`experiments/aberration_correction.py` corrects one channel's aberrations
+on a guide star (an isolated microsphere). The SLM phase over that
+channel's pupil is a sum of Zernike modes (Noll order, RMS-normalized,
+so coefficients are radians RMS), and the coefficients are optimized by
+**SPSA**, a stochastic gradient descent: each iteration probes one random
++/-1 direction in coefficient space with two snaps, F(a + c*delta) and
+F(a - c*delta), whatever the number of modes. Settings live in the
+`adaptive_optics` config section.
+
+Flow: the live ROI preview (as in the alignment) -> choose the channel
+(its Fourier-plane centre must already be calibrated) -> confirm the
+guide star -> the camera is cropped to a small square around it, a dark
+frame is taken -> optimize -> the flat and corrected masks are snapped
+back to back. The run folder gets `ao_correction.png` (metric vs
+iteration, original vs corrected PSF, final phase mask, coefficients),
+`ao_correction.npz` and `ao_correction_metadata.json` (coefficients by
+Noll index), and the coefficients are printed.
+
+* **Metrics are pluggable.** They live in `functions/psf_metrics.py`; lower
+  is always better. Write a small class with `__call__(image)` (and
+  optionally `set_reference(image)`, called with the uncorrected PSF),
+  add it to `METRICS`, and select it by name in
+  `adaptive_optics.metric`. The default, `power_weighted_second_moment`,
+  is the previous implementation's second moment multiplied by
+  (reference power / current power), so losing light is penalized;
+  `encircled_energy` and `sharpness` are also power-aware.
+  `second_moment` (power-blind) is kept for comparison.
+* **Photon budget.** Two snaps per iteration (the metric at the current
+  point is the mean of the two), a small guide-star ROI for fast
+  readout, a precomputed Zernike basis, and early stopping
+  (`patience`). Each iteration costs about 2 x (SLM settle + exposure),
+  ~0.3 s with the default 100 ms settle and 20 ms exposure.
+* **Tuning.** In simulation, `gain` 0.1 converged in ~30-50 iterations;
+  0.5 overshot badly first and took ~3x longer. `blank_laser_during_settle`
+  switches the laser off while the SLM settles, cutting illumination
+  ~in half, if the laser switches cleanly and fast.

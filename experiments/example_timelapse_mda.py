@@ -27,7 +27,7 @@ from core.config import load_config
 from core.session import Session
 from core.logging_setup import setup_logger
 from core.mmcore import load_mmcore
-from functions.slm import flat_mask
+from functions.phase_masks import flat_mask
 from functions.mmcore_slm import MMCoreSLM
 from functions.acquisition import run_timelapse_mda
 

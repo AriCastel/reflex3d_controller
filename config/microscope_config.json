@@ -5,7 +5,12 @@
     "readout_mode": "normal",
     "bit_depth": 16,
     "default_exposure_ms": 50,
-    "pixel_size_um": 6.5
+    "pixel_size_um": 6.5,
+    "channel_rois": {
+      "left": { "position_px": [256, 768], "size_px": 512 },
+      "right": { "position_px": [1280, 768], "size_px": 512 },
+      "_comment": "Square camera ROI for each polarization channel, in full-frame camera pixels. position_px is the ROI's TOP-LEFT corner [x, y] (the same convention as Micro-Manager's ROI x/y), size_px its side length. A channel always lands on the same part of the sensor, so set these once: experiments/fourier_plane_alignment.py shows them as boxes on a live full-frame preview before acquiring, which is the easiest way to check and tune them. The defaults are placeholders centred on each half of a 2048x2048 sensor."
+    }
   },
 
   "laser": {
@@ -97,5 +102,23 @@
     "device_adapter_path": "C:/Program Files/Micro-Manager-2.0",
     "system_config_path": "C:/Program Files/Micro-Manager-2.0/ConfigV3.cfg",
     "_comment": "New pymmcore-plus / napari-micromanager stack, used by core/mmcore.py and the *_mda experiments - the pycromanager code elsewhere in this config and codebase is unaffected and kept as legacy. device_adapter_path is the folder containing the MM device adapter DLLs/.so files (passed to CMMCorePlus.setDeviceAdapterSearchPaths); system_config_path is the .cfg hardware configuration file (passed to CMMCorePlus.loadSystemConfiguration). Point both at your real Micro-Manager installation and hardware config before running the pymmcore-plus experiments."
+  },
+
+  "adaptive_optics": {
+    "noll_indices": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    "metric": { "name": "power_weighted_second_moment", "params": { "radius_px": 15, "power_weight": 1.0 } },
+    "iterations": 100,
+    "gain": 0.1,
+    "perturbation_rad": 0.3,
+    "momentum": 0.0,
+    "max_abs_coefficient_rad": 3.0,
+    "patience": 25,
+    "seed": null,
+    "exposure_ms": 20,
+    "laser_power_mW": 5.0,
+    "guide_star_roi_px": 64,
+    "dark_frames": 10,
+    "blank_laser_during_settle": false,
+    "_comment": "Sensorless AO by SPSA (experiments/aberration_correction.py). noll_indices are the corrected Zernike modes (Noll order, RMS-normalized, coefficients in rad RMS); piston and tilts (1-3) only shift the PSF and defocus (4) only refocuses, so they're left out by default. metric picks a functions/psf_metrics.py metric by name; lower is always better, and power_weighted_second_moment / encircled_energy / sharpness penalize losing light, second_moment (the previous implementation's metric) doesn't. gain is the initial step size (0.1 converged ~3x faster than 0.5 in simulation, which overshoots) and perturbation_rad the +/- probe amplitude; both decay with the standard SPSA schedule. patience stops early after that many iterations without improvement (null = always run all iterations). guide_star_roi_px is the side of the camera crop around the bead - small is faster to read out but must contain the aberrated PSF. Each iteration costs 2 x (SLM settle + exposure). blank_laser_during_settle switches the laser off while the SLM settles, to cut bleaching; only use it if the laser switches cleanly in well under the settle time."
   }
 }

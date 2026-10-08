@@ -18,18 +18,25 @@ builds a map over the SLM:
 
 Either way d^2 -> 0 where the patch misses the pupil entirely.
 
-Before running
---------------
-Select a ROI in Micro-Manager showing ONLY ONE polarization channel
-(one channel occupies the left half of the sensor, the other the
-right), with a well-separated microsphere inside it. You will be asked
-which channel it is, and the result is stored per channel.
+Flow
+----
+1. A napari window streams the full camera frame live (flat mask on
+   the SLM), with each channel's ROI from `camera.channel_rois` drawn
+   as a box. Position the sample so a well-separated microsphere sits
+   inside the ROI of the channel you want, then close the window.
+2. Choose the channel and the probe mode in the terminal.
+3. The camera is cropped to that channel's ROI, a verification frame
+   is shown in napari to confirm the bead is localized, and the raster
+   runs.
+
+Runs on the pymmcore-plus stack: point `pymmcore_plus.device_adapter_path`
+/ `pymmcore_plus.system_config_path` at your Micro-Manager install and
+hardware config (including the Generic SLM device, `slm.device_label`).
 
 Run with:
     python -m experiments.fourier_plane_alignment
 """
 import numpy as np
-from pycromanager import Core
 
 from core.config import load_config
 from core.file_io import (
@@ -39,12 +46,16 @@ from core.file_io import (
     write_fourier_center,
 )
 from core.logging_setup import setup_logger
+from core.mmcore import load_mmcore
 from core.session import Session
-from functions.slm import SLMDisplay
+from functions.mmcore_camera import set_channel_roi
+from functions.mmcore_slm import MMCoreSLM
+from functions.napari_preview import show_verification_frame
 from calibration.fourier_alignment import (
     acquire_d2_map,
     estimate_duration_s,
     format_duration,
+    preview_sample_positioning,
     prompt_choice,
     prompt_yes_no,
     verify_point_source,
@@ -78,17 +89,38 @@ def main():
     laser_power = LASER_POWER_MW or fa["laser_power_mW"]
     loc_method = fa.get("localization_method", "frame_centroid")
 
-    # --- scientist-supplied choices, before any acquisition ---
-    channels = list(config.get("fourier_plane", "channels", default={}).keys())
-    channel = prompt_choice("Which polarization channel is in the ROI?",
-                            channels or ["left", "right"])
-    mode = prompt_choice("Which Zernike probe mode?", PROBE_MODES,
-                         default="tilt_x")
-    amplitude = AMPLITUDE_RAD or fa["amplitude_rad_by_mode"][mode]
-
     session = Session(config, script_name="fourier_plane_alignment")
     logger = setup_logger(session.path)
     logger.info(f"Run folder: {session.path}")
+
+    mmc = load_mmcore(config)
+    logger.info("Connected to Micro-Manager via pymmcore-plus.")
+
+    with MMCoreSLM(mmc, config) as slm:
+        try:
+            acquired = _acquire(mmc, config, slm, logger, session,
+                                step_px, patch_d, exposure_ms,
+                                laser_power, loc_method)
+        finally:
+            mmc.clearROI()
+    if acquired is not None:
+        _analyse(config, fa, logger, session, patch_d, *acquired)
+
+
+def _acquire(mmc, config, slm, logger, session, step_px, patch_d,
+             exposure_ms, laser_power, loc_method):
+    """Steps 1-3: preview, choices, verification, raster."""
+    # --- Step 1: live preview to position the sample ---
+    preview_sample_positioning(mmc, config, slm, logger, exposure_ms,
+                               laser_power)
+
+    # --- Step 2: scientist-supplied choices ---
+    channels = list(config.get("fourier_plane", "channels", default={}).keys())
+    channel = prompt_choice("Which polarization channel should be aligned?",
+                            channels or ["left", "right"])
+    mode = prompt_choice("Which Zernike probe mode?", PROBE_MODES,
+                         default="tilt_x")
+    amplitude = AMPLITUDE_RAD or config["fourier_alignment"]["amplitude_rad_by_mode"][mode]
     logger.info(f"Channel '{channel}', probe mode '{mode}', "
                 f"amplitude {amplitude / np.pi:.2f}*pi peak-to-valley")
 
@@ -99,49 +131,50 @@ def main():
           f"of acquisition.")
     if not prompt_yes_no("Proceed?", default=True):
         logger.info("Aborted before acquisition at the scientist's request.")
-        return
+        return None
 
-    core = Core()
-    logger.info("Connected to Micro-Manager.")
+    roi = set_channel_roi(mmc, config, channel)
+    logger.info(f"Camera ROI set to channel '{channel}': "
+                f"x={roi[0]}, y={roi[1]}, size={roi[2]} px")
 
-    # --- Step 1: verify the point source (SLM window opened and closed
-    # around this step so only one Tk root exists at a time, which keeps
-    # the matplotlib preview windows from clashing with the SLM window) ---
-    with SLMDisplay(config) as slm:
-        frame, loc = verify_point_source(
-            core, config, slm, logger, exposure_ms, laser_power, loc_method
-        )
-
+    # --- Step 3a: verify the point source inside the ROI ---
+    frame, loc = verify_point_source(
+        mmc, config, slm, logger, exposure_ms, laser_power, loc_method
+    )
     save_frame_tiff(session.path, frame,
                     {"purpose": "point source verification",
+                     "channel": channel,
+                     "camera_roi_xywh": list(roi),
                      "exposure_ms": exposure_ms,
                      "laser_power_mW": laser_power,
                      "localization": loc},
                     filename="verification_frame.tif")
 
-    _show_verification(frame, loc)
+    show_verification_frame(
+        frame, loc,
+        title=f"ReflEx3D — verification, channel '{channel}' (close to continue)",
+    )
     if loc is None:
         print("No point source was localized in the verification frame.")
     if not prompt_yes_no("Is the point source visible and correctly "
                          "localized?", default=False):
         logger.info("Aborted at point-source verification.")
         print("Aborted. Adjust the sample/ROI/exposure and run again.")
-        return
+        return None
 
-    # --- Step 2: raster the SLM ---
-    with SLMDisplay(config) as slm:
-        x_centers, y_centers, d2_map, acq_meta = acquire_d2_map(
-            core, config, slm, logger,
-            mode=mode,
-            amplitude_rad=amplitude,
-            patch_diameter_px=patch_d,
-            step_px=step_px,
-            exposure_ms=exposure_ms,
-            laser_power_mW=laser_power,
-            localization_method=loc_method,
-            x_range=X_RANGE,
-            y_range=Y_RANGE,
-        )
+    # --- Step 3b: raster the SLM ---
+    x_centers, y_centers, d2_map, acq_meta = acquire_d2_map(
+        mmc, config, slm, logger,
+        mode=mode,
+        amplitude_rad=amplitude,
+        patch_diameter_px=patch_d,
+        step_px=step_px,
+        exposure_ms=exposure_ms,
+        laser_power_mW=laser_power,
+        localization_method=loc_method,
+        x_range=X_RANGE,
+        y_range=Y_RANGE,
+    )
 
     # Save the raw map straight away, BEFORE asking for approval. A
     # raster can take a long time and losing it to a rejected fit (or a
@@ -151,8 +184,12 @@ def main():
     map_path = save_alignment_map(session.path, x_centers, y_centers,
                                   d2_map, acq_meta)
     logger.info(f"Raw map saved to {map_path}")
+    return channel, mode, x_centers, y_centers, d2_map, acq_meta
 
-    # --- Step 3: estimate the centre ---
+
+def _analyse(config, fa, logger, session, patch_d, channel, mode,
+             x_centers, y_centers, d2_map, acq_meta):
+    """Steps 4-6: estimate the centre, preview, approve + write back."""
     result = estimate_fourier_center(
         d2_map, x_centers, y_centers, mode,
         support_fraction=fa.get("support_fraction", 0.15),
@@ -171,7 +208,6 @@ def main():
               "re-analysis; see the warnings in the log.")
         return
 
-    # --- Step 4: preview ---
     fig = build_map_figure(x_centers, y_centers, d2_map, result,
                            config, channel)
     preview_path = save_figure(session.path, fig)
@@ -185,7 +221,6 @@ def main():
     for w in result["warnings"]:
         print(f"  WARNING: {w}")
 
-    # --- Step 5: approve and write back to the config ---
     if not prompt_yes_no("Accept this centre and write it to the config?",
                          default=False):
         logger.info("Scientist rejected the estimate; config not modified.")
@@ -203,22 +238,6 @@ def main():
     )
     logger.info(f"Wrote centre to {cfg_path} (backup at {backup_path})")
     print(f"Written to {cfg_path}\nPrevious config backed up at {backup_path}")
-
-
-def _show_verification(frame, loc):
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(figsize=(6.5, 6))
-    vmin, vmax = np.percentile(frame, [1, 99.9])
-    ax.imshow(frame, cmap="gray", vmin=vmin, vmax=vmax)
-    if loc is not None:
-        ax.plot(loc["x"], loc["y"], "r+", ms=20, mew=2)
-        ax.set_title(f"Verification — source at ({loc['x']:.1f}, "
-                     f"{loc['y']:.1f}), SNR {loc['snr']:.1f}")
-    else:
-        ax.set_title("Verification — NO source localized")
-    ax.set_xlabel("camera x (px)")
-    ax.set_ylabel("camera y (px)")
-    _show_figure(fig)
 
 
 def _show_figure(fig):

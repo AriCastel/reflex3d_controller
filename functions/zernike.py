@@ -83,3 +83,44 @@ def is_defocus_like(mode):
     a new probe mode only means adding it here and in MODE_INDICES.
     """
     return mode == "defocus"
+
+
+# --- Noll-indexed, RMS-normalized modes (adaptive optics) ---
+
+#: Conventional names for the low Noll indices, for reports.
+NOLL_NAMES = {
+    1: "piston", 2: "tilt x", 3: "tilt y", 4: "defocus",
+    5: "oblique astigmatism", 6: "vertical astigmatism",
+    7: "vertical coma", 8: "horizontal coma",
+    9: "vertical trefoil", 10: "oblique trefoil",
+    11: "primary spherical",
+    12: "vertical secondary astigmatism", 13: "oblique secondary astigmatism",
+    14: "vertical quadrafoil", 15: "oblique quadrafoil",
+    16: "horizontal secondary coma", 17: "vertical secondary coma",
+    18: "oblique secondary trefoil", 19: "vertical secondary trefoil",
+    20: "oblique pentafoil", 21: "vertical pentafoil",
+    22: "secondary spherical",
+}
+
+
+def noll_to_nm(j):
+    """Noll index j (1-based) -> (n, m), m > 0 for cos and m < 0 for sin terms."""
+    if j < 1:
+        raise ValueError(f"Noll indices start at 1, got {j}")
+    n = int((-1.0 + np.sqrt(8 * (j - 1) + 1)) / 2.0)
+    p = j - n * (n + 1) // 2
+    k = n % 2
+    m = int((p + k) / 2) * 2 - k
+    if m != 0 and j % 2 == 1:
+        m = -m
+    return n, m
+
+
+def noll_zernike(j, rho, theta):
+    """
+    Noll mode j, normalized to unit RMS over the unit disk, so a
+    coefficient of c radians is c radians RMS of wavefront phase.
+    """
+    n, m = noll_to_nm(j)
+    norm = np.sqrt(n + 1) if m == 0 else np.sqrt(2 * (n + 1))
+    return norm * zernike(n, m, rho, theta)
