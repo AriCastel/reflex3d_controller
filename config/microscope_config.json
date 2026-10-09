@@ -7,103 +7,6 @@
     "default_exposure_ms": 50,
     "pixel_size_um": 6.5,
     "channel_rois": {
-      "left": { "position_px": [256, 768], "size_px": 512 },
-      "right": { "position_px": [1280, 768], "size_px": 512 },
-      "_comment": "Square camera ROI for each polarization channel, in full-frame camera pixels. position_px is the ROI's TOP-LEFT corner [x, y] (the same convention as Micro-Manager's ROI x/y), size_px its side length. A channel always lands on the same part of the sensor, so set these once: experiments/fourier_plane_alignment.py shows them as boxes on a live full-frame preview before acquiring, which is the easiest way to check and tune them. The defaults are placeholders centred on each half of a 2048x2048 sensor."
-    }
-  },
-
-  "laser": {
-    "device_label": "Cobolt MLD 488",
-    "power_property": "12-Power Setpoint [mW]",
-    "state_property": "10-Emission Status",
-    "wavelength_nm": 488,
-    "max_power_mW": 200,
-    "default_power_mW": 5.0
-  },
-
-
-  "stage": {
-    "xy_device_label": "Sutter MPC",
-    "z_device_label": "Sutter MPC",
-    "model": "Sutter Instruments piezo XYZ",
-    "units": "um"
-  },
-
-  "micromanipulator": {
-    "device_label": "Sutter MPC",
-    "home_position_um": { "x": 0.0, "y": 0.0, "z": 0.0 },
-    "work_position_um": { "x": 0.0, "y": 0.0, "z": 0.0 }
-  },
-
-  "slm": {
-    "model": "Meadowlark Optics 8-bit LC-SLM",
-    "monitor_index": 1,
-    "device_label": "SLM",
-    "resolution": [1920, 11520],
-    "pixel_pitch_um": 9.2,
-    "bit_depth": 8,
-    "flat_value": 128,
-    "grey_level_2pi": 255,
-    "refresh_rate_hz": 30,
-    "settle_frames": 3,
-    "_comment": "monitor_index is used only by the legacy pycromanager path (functions/slm.py's SLMDisplay, a plain secondary-display window). device_label is used only by the pymmcore-plus path (functions/mmcore_slm.py's MMCoreSLM) - it's the Micro-Manager device label for the Generic SLM ('Spatial light modulator controlled through computer graphics') device in your MM hardware config, and must match exactly. resolution must match that device's resolution too (checked at runtime by MMCoreSLM; a mismatch raises an error). grey_level_2pi is the grey level corresponding to a full 2*pi phase stroke, from the device phase calibration (LUT) - set this properly or every phase mask will be miscalibrated. settle_frames * (1/refresh_rate_hz) is how long the code waits after pushing a mask before snapping; 3 frames at 30 Hz = 100 ms, which covers both the frame period and liquid-crystal relaxation."
-  },
-
-  "fourier_plane": {
-    "radius_px": 400,
-    "NA": null,
-    "focal_length_mm": null,
-    "back_aperture_diameter_mm": null,
-    "channels": {
-      "left": {
-        "center_px": [null, null],
-        "calibrated_on": null,
-        "calibration_mode": null,
-        "calibration_run": null,
-        "_comment": "Polarization channel imaged onto the LEFT half of the camera sensor."
-      },
-      "right": {
-        "center_px": [null, null],
-        "calibrated_on": null,
-        "calibration_mode": null,
-        "calibration_run": null,
-        "_comment": "Polarization channel imaged onto the RIGHT half of the camera sensor."
-      }
-    },
-    "_comment": "radius_px is the pupil radius on the SLM, in SLM pixels, treated as known. center_px is [x, y] in SLM pixels and is written by experiments/fourier_plane_alignment.py - one entry per polarization channel, since the two channels have distinct Fourier planes on the same SLM."
-  },
-
-  "fourier_alignment": {
-    "step_px": 40,
-    "patch_diameter_px": 240,
-    "amplitude_rad_by_mode": {
-      "tilt_x": 6.283185307179586,
-      "tilt_y": 6.283185307179586,
-      "defocus": 3.141592653589793
-    },
-    "localization_method": "frame_centroid",
-    "exposure_ms": 100,
-    "laser_power_mW": 5.0,
-    "support_fraction": 0.15,
-    "_comment": "patch_diameter_px should be a fraction of the pupil diameter (roughly the pupil RADIUS is a good starting point) so the patch can partially overlap the pupil - that partial overlap is what carries the signal. Amplitudes are peak-to-valley phase across the patch: tilt tolerates a full 2*pi, but defocus works best near pi, because a 2*pi defocus stroke scatters light so broadly that the centroid stops tracking it. Tune both on the real instrument."
-  },
-
-  "acquisition_defaults": {
-    "root_folder": "D:/ReflEx3D_Data",
-    "timelapse": {
-      "num_frames": 50,
-      "interval_s": 0.0,
-      "exposure_ms": 50
-    }{
-  "camera": {
-    "device_label": "Hamamatsu ORCA 4",
-    "model": "Hamamatsu Orca Flash 4.0",
-    "readout_mode": "normal",
-    "bit_depth": 16,
-    "default_exposure_ms": 50,
-    "pixel_size_um": 6.5,
-    "channel_rois": {
       "left": {
         "position_px": [
           384,
@@ -252,32 +155,6 @@
     "laser_power_mW": 200.0,
     "guide_star_roi_px": 64,
     "dark_frames": 100,
-    "blank_laser_during_settle": false,
-    "_comment": "Sensorless AO by SPSA (experiments/aberration_correction.py). noll_indices are the corrected Zernike modes (Noll order, RMS-normalized, coefficients in rad RMS); piston and tilts (1-3) only shift the PSF and defocus (4) only refocuses, so they're left out by default. metric picks a functions/psf_metrics.py metric by name; lower is always better, and power_weighted_second_moment / encircled_energy / sharpness penalize losing light, second_moment (the previous implementation's metric) doesn't. gain is the initial step size (0.1 converged ~3x faster than 0.5 in simulation, which overshoots) and perturbation_rad the +/- probe amplitude; both decay with the standard SPSA schedule. patience stops early after that many iterations without improvement (null = always run all iterations). guide_star_roi_px is the side of the camera crop around the bead - small is faster to read out but must contain the aberrated PSF. Each iteration costs 2 x (SLM settle + exposure). blank_laser_during_settle switches the laser off while the SLM settles, to cut bleaching; only use it if the laser switches cleanly in well under the settle time."
-  }
-}
-  },
-
-  "pymmcore_plus": {
-    "device_adapter_path": "C:/Program Files/Micro-Manager-2.0",
-    "system_config_path": "C:/Program Files/Micro-Manager-2.0/ConfigV3.cfg",
-    "_comment": "New pymmcore-plus / napari-micromanager stack, used by core/mmcore.py and the *_mda experiments - the pycromanager code elsewhere in this config and codebase is unaffected and kept as legacy. device_adapter_path is the folder containing the MM device adapter DLLs/.so files (passed to CMMCorePlus.setDeviceAdapterSearchPaths); system_config_path is the .cfg hardware configuration file (passed to CMMCorePlus.loadSystemConfiguration). Point both at your real Micro-Manager installation and hardware config before running the pymmcore-plus experiments."
-  },
-
-  "adaptive_optics": {
-    "noll_indices": [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-    "metric": { "name": "power_weighted_second_moment", "params": { "radius_px": 15, "power_weight": 1.0 } },
-    "iterations": 100,
-    "gain": 0.1,
-    "perturbation_rad": 0.3,
-    "momentum": 0.0,
-    "max_abs_coefficient_rad": 3.0,
-    "patience": 25,
-    "seed": null,
-    "exposure_ms": 20,
-    "laser_power_mW": 5.0,
-    "guide_star_roi_px": 64,
-    "dark_frames": 10,
     "blank_laser_during_settle": false,
     "_comment": "Sensorless AO by SPSA (experiments/aberration_correction.py). noll_indices are the corrected Zernike modes (Noll order, RMS-normalized, coefficients in rad RMS); piston and tilts (1-3) only shift the PSF and defocus (4) only refocuses, so they're left out by default. metric picks a functions/psf_metrics.py metric by name; lower is always better, and power_weighted_second_moment / encircled_energy / sharpness penalize losing light, second_moment (the previous implementation's metric) doesn't. gain is the initial step size (0.1 converged ~3x faster than 0.5 in simulation, which overshoots) and perturbation_rad the +/- probe amplitude; both decay with the standard SPSA schedule. patience stops early after that many iterations without improvement (null = always run all iterations). guide_star_roi_px is the side of the camera crop around the bead - small is faster to read out but must contain the aberrated PSF. Each iteration costs 2 x (SLM settle + exposure). blank_laser_during_settle switches the laser off while the SLM settles, to cut bleaching; only use it if the laser switches cleanly in well under the settle time."
   }
