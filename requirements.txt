@@ -5,6 +5,7 @@ pillow
 screeninfo
 scipy
 matplotlib
+tqdm
 
 # pymmcore-plus / napari-micromanager stack (see config/microscope_config.json's
 # "pymmcore_plus" section and experiments/*_mda.py) - pycromanager above is kept

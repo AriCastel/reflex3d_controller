@@ -135,3 +135,34 @@ def raster_positions(config, step_px, x_range=None, y_range=None):
     x_centers = np.arange(x_lo + step_px / 2.0, x_hi, step_px)
     y_centers = np.arange(y_lo + step_px / 2.0, y_hi, step_px)
     return x_centers, y_centers
+
+
+def local_raster_positions(config, center_xy, radius_px, step_px):
+    """
+    Patch-centre positions on a fine grid covering a disk of radius
+    `radius_px` around `center_xy`, for refining an existing estimate.
+
+    The grid is anchored on `center_xy` (so the previous estimate is a
+    grid node) and is clipped to the SLM. Positions in the grid's
+    bounding square but outside the disk, or off the SLM, are flagged
+    False in the returned mask and are meant to be skipped.
+
+    Returns
+    -------
+    x_centers, y_centers : 1D arrays of patch centre coordinates.
+    window_mask : bool array (len(y_centers), len(x_centers)); True where
+        the position is to be rastered.
+    """
+    width, height = config.get("slm", "resolution", default=[1920, 1080])
+    cx, cy = float(center_xy[0]), float(center_xy[1])
+    n = int(np.floor(radius_px / step_px))
+    offsets = step_px * np.arange(-n, n + 1)
+
+    x_centers = cx + offsets
+    y_centers = cy + offsets
+    x_centers = x_centers[(x_centers >= 0) & (x_centers <= width)]
+    y_centers = y_centers[(y_centers >= 0) & (y_centers <= height)]
+
+    XG, YG = np.meshgrid(x_centers, y_centers)
+    window_mask = np.hypot(XG - cx, YG - cy) <= radius_px + 1e-9
+    return x_centers, y_centers, window_mask

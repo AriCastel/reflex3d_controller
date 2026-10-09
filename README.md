@@ -52,9 +52,11 @@ experiments/                     Minimal scripts: parameters + function calls on
   example_timelapse_mda.py         Same timelapse via pymmcore-plus's MDA engine,
                                     with a live napari preview
   fourier_plane_alignment.py       Locates the pupil centre on the SLM (pymmcore-plus)
+  fourier_plane_refinement.py      Refines that centre with a fine raster around it
   aberration_correction.py         Sensorless AO on a guide star (pymmcore-plus)
 calibration/                     Infrequent, complex routines
   fourier_alignment.py             Fourier-plane alignment acquisition
+  fourier_refinement.py            Helpers for the refinement pass (stored centres)
   map_analysis.py                  Centre estimation from the d^2 map
   map_preview.py                   Preview figure builder
 gui/                              (empty for now) tkinter UI, fully isolated
@@ -62,6 +64,8 @@ tests/
   e2e_test.py                      Alignment acquisition -> analysis -> config
                                     write-back on a simulated pymmcore-plus
                                     microscope (python tests/e2e_test.py)
+  refinement_e2e_test.py           Refinement of an offset centre on the same simulated
+                                    microscope (python tests/refinement_e2e_test.py)
   sim_validate.py                  Centre recovery on a simulated pupil
   ao_sim_test.py                   Aberration correction on a simulated microscope
                                     with a known aberration (python tests/ao_sim_test.py)
@@ -245,6 +249,37 @@ including when it's aborted.
 * The raw map (`.npz` + `.csv`) is saved immediately after the raster,
   *before* you approve anything, so a long acquisition is never lost
   to a rejected fit. It can be re-analysed without re-acquiring.
+
+
+### Refining the centre (`fourier_plane_refinement.py`)
+
+Rastering the whole SLM gets expensive as the step shrinks (time goes
+as 1/step^2). Once `fourier_plane.channels.<channel>.center_px` holds a
+coarse estimate, `experiments/fourier_plane_refinement.py` rasters only
+a **disk around it** (default radius: `fourier_plane.radius_px`) at a
+**finer step** (default `fourier_alignment.step_px / 4`), with the same
+probe patch and d^2 measurement. With the shipped numbers that is ~650
+positions at 25 px instead of ~3500 for the whole SLM at the same step.
+
+It follows the same flow as the coarse experiment - live ROI preview,
+channel choice (only channels with a stored centre are offered; the
+probe mode defaults to the one used for the stored centre), time
+estimate, point-source verification, then the raster with a `tqdm`
+progress bar - and saves the raw map (`.npz` + `.csv`) before asking
+anything. The preview PNG shows the rastered area on the SLM, the fine
+map with the previous and refined centres, and the radial profile. The
+config is only updated (with a `.json.bak` backup) after you confirm.
+
+Because the window only covers part of the response, the support
+centroid used by the coarse analysis does not apply. The refined centre
+is the point about which the map is best described as a function of
+radius alone (`refine_fourier_center` in `calibration/map_analysis.py`).
+The result is flagged if that radial model explains < 50% of the map's
+variance, if the centre lands at the edge of the search area (half the
+window radius) or if many positions failed to localize. Tune
+`REFINE_FACTOR`, `STEP_PX` and `WINDOW_RADIUS_PX` at the top of the
+script; the window must reach into the fall-off of the response (for
+tilt, beyond `pupil radius - patch radius` from the centre).
 
 
 ## Aberration correction (sensorless adaptive optics)

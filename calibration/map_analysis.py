@@ -24,7 +24,7 @@ quadratic fit is applied as a refinement only if it validates
 geometric centroid).
 """
 import numpy as np
-from scipy import ndimage
+from scipy import ndimage, optimize
 
 from functions.zernike import is_defocus_like
 
@@ -311,5 +311,186 @@ def consistency_check(result, config):
             f"lot from the value implied by the configured pupil radius "
             f"({expected:.0f} px). Check fourier_plane.radius_px and the "
             "probe amplitude."
+        )
+    return result
+
+
+# ---------------------------------------------------------------------
+# Refinement of an existing estimate from a small, fine, windowed raster
+# ---------------------------------------------------------------------
+#
+# estimate_fourier_center() is not designed for a map that only covers a
+# disk around the previous estimate: its primary estimate is the centroid
+# of the overlap support, and when the whole window lies inside the
+# support that is just the window centre - i.e. the old estimate back -
+# leaving only its quadratic refinement, whose validity checks assume the
+# full-SLM support.
+#
+# What survives windowing is the *shape* of the response. For a circular
+# patch on a circular pupil, d^2 depends only on the distance between the
+# patch centre and the pupil centre (for tilt: a plateau then a fall-off;
+# for defocus: a dip inside a ring). So the pupil centre is the point
+# about which the map is best described as a function of radius alone.
+
+def _hat_basis(r, knots):
+    """Piecewise-linear ("hat") basis evaluated at radii r, shape (n, K)."""
+    idx = np.clip(np.searchsorted(knots, r) - 1, 0, len(knots) - 2)
+    t = np.clip((r - knots[idx]) / (knots[idx + 1] - knots[idx]), 0.0, 1.0)
+    B = np.zeros((r.size, len(knots)))
+    rows = np.arange(r.size)
+    B[rows, idx] = 1.0 - t
+    B[rows, idx + 1] = t
+    return B
+
+
+def _radial_residual(center, xg, yg, z, knots):
+    """Sum of squared residuals of the best radial profile about `center`."""
+    r = np.hypot(xg - center[0], yg - center[1])
+    B = _hat_basis(r, knots)
+    coef, *_ = np.linalg.lstsq(B, z, rcond=None)
+    res = z - B @ coef
+    return float(res @ res)
+
+
+def refine_fourier_center(
+    d2_map,
+    x_centers,
+    y_centers,
+    mode,
+    previous_center,
+    window_radius_px,
+    search_radius_px=None,
+    n_knots=10,
+    min_explained=0.5,
+):
+    """
+    Refine a Fourier-plane centre from a fine raster of a disk around it.
+
+    Finds the centre c minimising the residual of a free-form radial
+    profile d2(|p - c|) fitted to the map (a coarse grid over the search
+    area picks the basin, Nelder-Mead polishes it).
+
+    Parameters
+    ----------
+    d2_map : 2D array (len(y_centers), len(x_centers)); NaN where not
+        acquired or where localization failed.
+    previous_center : (x, y) estimate the window was centred on.
+    window_radius_px : radius of the rastered disk.
+    search_radius_px : how far from `previous_center` the new centre may
+        lie; defaults to half the window radius.
+    min_explained : below this fraction of the map's variance explained
+        by the radial model, the result is flagged as unreliable.
+
+    Returns a dict shaped like estimate_fourier_center()'s, plus
+    previous_center_x/y, shift_px, explained_fraction.
+    """
+    d2 = np.asarray(d2_map, dtype=float)
+    XG, YG = np.meshgrid(np.asarray(x_centers, float),
+                         np.asarray(y_centers, float))
+    px, py = float(previous_center[0]), float(previous_center[1])
+    in_window = np.hypot(XG - px, YG - py) <= window_radius_px + 1e-9
+    valid = np.isfinite(d2) & in_window
+    if search_radius_px is None:
+        search_radius_px = 0.5 * window_radius_px
+
+    result = {
+        "mode": mode,
+        "expected_extremum": "minimum" if is_defocus_like(mode) else "maximum",
+        "support_threshold": float("nan"),
+        "n_support_points": 0,
+        "n_valid_points": int(valid.sum()),
+        "n_failed_points": int((in_window & ~np.isfinite(d2)).sum()),
+        "support_mask": valid,
+        "center_x": float("nan"),
+        "center_y": float("nan"),
+        "centroid_center_x": float("nan"),
+        "centroid_center_y": float("nan"),
+        "refined_center_x": float("nan"),
+        "refined_center_y": float("nan"),
+        "support_radius_px": float("nan"),
+        "method": "failed",
+        "fit_radius_px": float("nan"),
+        "previous_center_x": px,
+        "previous_center_y": py,
+        "window_radius_px": float(window_radius_px),
+        "search_radius_px": float(search_radius_px),
+        "shift_px": float("nan"),
+        "explained_fraction": float("nan"),
+        "warnings": [],
+    }
+
+    if valid.sum() < 3 * n_knots:
+        result["warnings"].append(
+            f"Only {int(valid.sum())} valid map points - too few to fit a "
+            "radial profile. Check localization (laser power, exposure)."
+        )
+        return result
+
+    xg, yg, z = XG[valid], YG[valid], d2[valid]
+    ss_tot = float(((z - z.mean()) ** 2).sum())
+    if ss_tot <= 0:
+        result["warnings"].append("The map is constant; nothing to fit.")
+        return result
+
+    knots = np.linspace(0.0, window_radius_px + search_radius_px, n_knots)
+
+    def cost(c):
+        return _radial_residual(c, xg, yg, z, knots)
+
+    # Coarse grid over the search disk to pick the basin, then polish.
+    n_grid = 9
+    offs = np.linspace(-search_radius_px, search_radius_px, n_grid)
+    best, best_c = np.inf, (px, py)
+    for dy in offs:
+        for dx in offs:
+            if np.hypot(dx, dy) > search_radius_px:
+                continue
+            c = (px + dx, py + dy)
+            v = cost(c)
+            if v < best:
+                best, best_c = v, c
+    step0 = max(2.0 * search_radius_px / (n_grid - 1), 1.0)
+    opt = optimize.minimize(
+        cost, best_c, method="Nelder-Mead",
+        options={"initial_simplex": np.array(best_c) + step0 * np.array(
+                     [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]),
+                 "xatol": 0.05, "fatol": 1e-9 * ss_tot, "maxiter": 400},
+    )
+    cx, cy = float(opt.x[0]), float(opt.x[1])
+    ss_res = float(opt.fun)
+
+    shift = float(np.hypot(cx - px, cy - py))
+    explained = 1.0 - ss_res / ss_tot
+    result.update({
+        "center_x": cx,
+        "center_y": cy,
+        "refined_center_x": cx,
+        "refined_center_y": cy,
+        "centroid_center_x": px,
+        "centroid_center_y": py,
+        "method": "radial_symmetry",
+        "shift_px": shift,
+        "explained_fraction": explained,
+    })
+
+    if explained < min_explained:
+        result["warnings"].append(
+            f"A radial profile explains only {100 * explained:.0f}% of the "
+            "map's variance, so there is no clear symmetry centre. The "
+            "window may be too small or too far off the pupil, the probe "
+            "amplitude too weak, or localization too noisy."
+        )
+    if shift > 0.9 * search_radius_px:
+        result["warnings"].append(
+            f"The new centre is {shift:.0f} px from the previous one, at the "
+            f"edge of the {search_radius_px:.0f} px search area - the true "
+            "centre may lie beyond it. Re-run fourier_plane_alignment for a "
+            "fresh coarse estimate instead."
+        )
+    n_expected = int(in_window.sum())
+    if result["n_failed_points"] > 0.3 * n_expected:
+        result["warnings"].append(
+            f"{result['n_failed_points']}/{n_expected} positions failed to "
+            "localize; the map is probably unreliable."
         )
     return result
