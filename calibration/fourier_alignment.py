@@ -150,9 +150,22 @@ def acquire_d2_map(
     x_range=None,
     y_range=None,
     progress_every=25,
+    positions=None,
+    position_mask=None,
+    use_tqdm=False,
 ):
     """
     Raster the probe patch over the SLM and build the d^2 map.
+
+    By default the whole SLM is rastered on a `step_px` grid. A caller
+    that already knows where to look (calibration/fourier_refinement.py)
+    can instead pass explicit `positions=(x_centers, y_centers)` and a
+    boolean `position_mask` of shape (len(y_centers), len(x_centers));
+    only positions where the mask is True are acquired, the rest stay
+    NaN in the returned map.
+
+    With `use_tqdm` a tqdm progress bar replaces the periodic log lines
+    (falling back to them if tqdm isn't installed).
 
     Returns
     -------
@@ -166,15 +179,39 @@ def acquire_d2_map(
             f"Unknown probe mode {mode!r}. Available: {sorted(MODE_INDICES)}"
         )
 
-    x_centers, y_centers = raster_positions(config, step_px, x_range, y_range)
-    n_pos = len(x_centers) * len(y_centers)
+    if positions is None:
+        x_centers, y_centers = raster_positions(config, step_px, x_range, y_range)
+    else:
+        x_centers, y_centers = (np.asarray(p, float) for p in positions)
+    if position_mask is None:
+        position_mask = np.ones((len(y_centers), len(x_centers)), dtype=bool)
+    else:
+        position_mask = np.asarray(position_mask, dtype=bool)
+        if position_mask.shape != (len(y_centers), len(x_centers)):
+            raise ValueError(
+                f"position_mask shape {position_mask.shape} does not match "
+                f"the ({len(y_centers)}, {len(x_centers)}) position grid."
+            )
+    to_acquire = [(iy, ix) for iy in range(len(y_centers))
+                  for ix in range(len(x_centers)) if position_mask[iy, ix]]
+    n_pos = len(to_acquire)
     if n_pos == 0:
         raise ValueError("Raster produced no positions — check step_px/ranges.")
 
+    tqdm = None
+    if use_tqdm:
+        try:
+            from tqdm import tqdm
+        except ImportError:
+            logger.warning("tqdm is not installed; falling back to log-line "
+                           "progress (pip install tqdm).")
+        else:
+            progress_every = 0
+
     settle = slm_settle_seconds(config)
     logger.info(
-        f"Rastering {len(x_centers)} x {len(y_centers)} = {n_pos} positions "
-        f"(step {step_px} px, patch {patch_diameter_px} px, mode {mode}, "
+        f"Rastering {n_pos} positions on a {len(x_centers)} x {len(y_centers)} "
+        f"grid (step {step_px} px, patch {patch_diameter_px} px, mode {mode}, "
         f"amplitude {amplitude_rad / np.pi:.2f}*pi p-v)"
     )
     logger.info(
@@ -189,39 +226,44 @@ def acquire_d2_map(
     d2_map = np.full((len(y_centers), len(x_centers)), np.nan)
     n_failed = 0
     t_start = time.time()
+    bar = (tqdm(total=n_pos, desc="Rastering", unit="pos", dynamic_ncols=True)
+           if tqdm is not None else None)
 
     try:
-        k = 0
-        for iy, ycen in enumerate(y_centers):
-            for ix, xcen in enumerate(x_centers):
-                locs = []
-                for sign in (+1, -1):
-                    mask = zernike_patch_mask(
-                        config, (xcen, ycen), patch_diameter_px,
-                        mode, amplitude_rad, sign,
-                    )
-                    slm.show_mask(mask)
-                    time.sleep(settle)
-                    locs.append(
-                        localize_psf(mmc.snap(), method=localization_method)
-                    )
+        for k, (iy, ix) in enumerate(to_acquire, start=1):
+            xcen, ycen = x_centers[ix], y_centers[iy]
+            locs = []
+            for sign in (+1, -1):
+                mask = zernike_patch_mask(
+                    config, (xcen, ycen), patch_diameter_px,
+                    mode, amplitude_rad, sign,
+                )
+                slm.show_mask(mask)
+                time.sleep(settle)
+                locs.append(
+                    localize_psf(mmc.snap(), method=localization_method)
+                )
 
-                d2 = squared_separation(locs[0], locs[1])
-                d2_map[iy, ix] = d2
-                if not np.isfinite(d2):
-                    n_failed += 1
+            d2 = squared_separation(locs[0], locs[1])
+            d2_map[iy, ix] = d2
+            if not np.isfinite(d2):
+                n_failed += 1
 
-                k += 1
-                if progress_every and k % progress_every == 0:
-                    frac = k / n_pos
-                    elapsed = time.time() - t_start
-                    remaining = elapsed / frac - elapsed
-                    logger.info(
-                        f"  {k}/{n_pos} ({100 * frac:.0f}%) — "
-                        f"{format_duration(remaining)} remaining, "
-                        f"{n_failed} failed so far"
-                    )
+            if bar is not None:
+                bar.set_postfix(failed=n_failed, refresh=False)
+                bar.update(1)
+            elif progress_every and k % progress_every == 0:
+                frac = k / n_pos
+                elapsed = time.time() - t_start
+                remaining = elapsed / frac - elapsed
+                logger.info(
+                    f"  {k}/{n_pos} ({100 * frac:.0f}%) — "
+                    f"{format_duration(remaining)} remaining, "
+                    f"{n_failed} failed so far"
+                )
     finally:
+        if bar is not None:
+            bar.close()
         laser_off_mmcore(mmc, config)
         slm.show_mask(flat_mask(config))
 

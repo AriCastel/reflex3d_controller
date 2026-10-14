@@ -87,3 +87,102 @@ def build_map_figure(x_centers, y_centers, d2_map, result, config, channel):
     )
     fig.tight_layout()
     return fig
+
+
+def build_refinement_figure(x_centers, y_centers, d2_map, result, config,
+                            channel):
+    """
+    Preview of a fine refinement raster: where on the SLM it was taken,
+    the fine d^2 map with the previous and refined centres, and the
+    radial profile about the refined centre.
+    """
+    import matplotlib.pyplot as plt
+
+    xs = np.asarray(x_centers, float)
+    ys = np.asarray(y_centers, float)
+    d2 = np.asarray(d2_map, float)
+    px, py = result["previous_center_x"], result["previous_center_y"]
+    cx, cy = result["center_x"], result["center_y"]
+    r_win = result["window_radius_px"]
+    r_pupil = config.get("fourier_plane", "radius_px")
+    width, height = config.get("slm", "resolution", default=[1920, 1080])
+    have_new = np.isfinite(cx) and np.isfinite(cy)
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5.5),
+                             gridspec_kw={"width_ratios": [1.0, 1.25, 1.0]})
+
+    # --- left: the rastered area on the whole SLM ---
+    ax = axes[0]
+    ax.add_patch(plt.Rectangle((0, 0), width, height, fill=False,
+                               color="black", lw=1.2))
+    ax.add_patch(plt.Circle((px, py), r_win, color="tab:blue", alpha=0.35,
+                            label=f"rastered area (r={r_win:.0f} px)"))
+    if r_pupil:
+        ax.add_patch(plt.Circle((px, py), r_pupil, fill=False, color="red",
+                                ls="--", lw=1.2, label=f"pupil r={r_pupil} px"))
+    ax.plot(px, py, "wx", mec="k", markersize=9, label="previous centre")
+    if have_new:
+        ax.plot(cx, cy, "r+", markersize=14, markeredgewidth=2,
+                label="refined centre")
+    ax.set_xlim(-0.03 * width, 1.03 * width)
+    ax.set_ylim(1.03 * height, -0.03 * height)
+    ax.set_aspect("equal")
+    ax.set_xlabel("SLM x (px)")
+    ax.set_ylabel("SLM y (px)")
+    ax.set_title("Rastered area on the SLM")
+    ax.legend(loc="lower right", fontsize=7)
+
+    # --- middle: the fine map ---
+    ax = axes[1]
+    dx = float(np.mean(np.diff(xs))) if len(xs) > 1 else 1.0
+    dy = float(np.mean(np.diff(ys))) if len(ys) > 1 else 1.0
+    extent = [xs[0] - dx / 2, xs[-1] + dx / 2, ys[-1] + dy / 2, ys[0] - dy / 2]
+    cmap = plt.get_cmap("viridis").copy()
+    cmap.set_bad("0.9")
+    im = ax.imshow(np.ma.masked_invalid(d2), origin="upper", extent=extent,
+                   cmap=cmap, interpolation="nearest", aspect="equal")
+    fig.colorbar(im, ax=ax, label=r"$d^2$  (camera px$^2$)")
+    ax.add_patch(plt.Circle((px, py), r_win, fill=False, color="white",
+                            ls=":", lw=1.2))
+    ax.plot(px, py, "wx", markersize=10, markeredgewidth=2,
+            label=f"previous ({px:.1f}, {py:.1f})")
+    if have_new:
+        ax.plot(cx, cy, "r+", markersize=18, markeredgewidth=2.5,
+                label=f"refined ({cx:.1f}, {cy:.1f})")
+    ax.set_xlabel("SLM x (px)")
+    ax.set_ylabel("SLM y (px)")
+    ax.set_title(f"{result['mode']} probe, step {dx:.0f} px — expect a "
+                 f"{result['expected_extremum']} at the centre", fontsize=10)
+    ax.legend(loc="best", fontsize=7)
+
+    # --- right: radial profile about the refined centre ---
+    ax = axes[2]
+    if have_new:
+        XG, YG = np.meshgrid(xs, ys)
+        r = np.hypot(XG - cx, YG - cy)
+        ok = np.isfinite(d2)
+        ax.plot(r[ok], d2[ok], ".", ms=3, alpha=0.4, color="0.5",
+                label="map points")
+        nb = 15
+        edges = np.linspace(0, r[ok].max(), nb + 1)
+        cen, prof = [], []
+        for i in range(nb):
+            sel = ok & (r >= edges[i]) & (r < edges[i + 1])
+            if sel.sum():
+                cen.append(0.5 * (edges[i] + edges[i + 1]))
+                prof.append(np.nanmean(d2[sel]))
+        ax.plot(cen, prof, "-o", color="crimson", ms=4, label="binned mean")
+    ax.set_xlabel("distance from refined centre (SLM px)")
+    ax.set_ylabel(r"$d^2$  (camera px$^2$)")
+    ax.set_title("Radial profile")
+    ax.legend(fontsize=8)
+
+    fig.suptitle(
+        f"Fourier-plane refinement — channel '{channel}'   "
+        f"[shift {result['shift_px']:.1f} px, radial model explains "
+        f"{100 * result['explained_fraction']:.0f}% of variance, "
+        f"{result['n_failed_points']} failed pts]",
+        fontsize=11,
+    )
+    fig.tight_layout()
+    return fig
