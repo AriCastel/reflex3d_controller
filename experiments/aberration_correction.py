@@ -20,6 +20,11 @@ Flow
    back, and the run's figure (metric vs iteration, original vs
    corrected PSF, final phase, coefficients) is saved and shown, and
    the coefficients printed.
+5. Once the figure is closed, choose whether to store the coefficients
+   in config/phase_masks.json (method 'spsa', this channel), where the
+   imaging mask scripts (experiments/slm_*.py) and the timelapse read
+   them. A run not stored now can be stored later with
+   experiments/store_ao_correction.py.
 
 Run with:
     python -m experiments.aberration_correction
@@ -27,7 +32,7 @@ Run with:
 from datetime import datetime
 
 from core.config import load_config
-from core.file_io import save_ao_result, save_figure
+from core.file_io import save_ao_result, save_figure, write_phase_mask_coefficients
 from core.logging_setup import setup_logger
 from core.mmcore import load_mmcore
 from core.session import Session
@@ -40,10 +45,12 @@ from calibration.fourier_alignment import (
     verify_point_source,
 )
 from functions.adaptive_optics import (
+    AO_METHOD,
     ZernikePupil,
     acquire_dark_frame,
     build_ao_figure,
     coefficient_table,
+    phase_mask_entry,
     run_aberration_correction,
     set_guide_star_roi,
 )
@@ -89,6 +96,7 @@ def main():
     channel, result, gs_roi = out
 
     metadata = {
+        "method": AO_METHOD,
         "channel": channel,
         "finished_at": datetime.now().isoformat(sep=" ", timespec="seconds"),
         "metric": metric_cfg,
@@ -122,6 +130,16 @@ def main():
           f"{result['metric_corrected']:.4g} (corrected); "
           f"corrected/original power {result['power_ratio']:.2f}")
     _show_figure()
+
+    store = config.phase_masks_path
+    if prompt_yes_no(f"Store these coefficients in {store.name} as the '{AO_METHOD}' correction "
+                     f"for channel '{channel}' (replacing any stored one)?", default=True):
+        _, backup = write_phase_mask_coefficients(
+            store, AO_METHOD, channel, phase_mask_entry(metadata, session.path))
+        logger.info(f"Coefficients stored in {store} under {AO_METHOD}.{channel}"
+                    + (f" (previous file backed up to {backup.name})" if backup else ""))
+    else:
+        logger.info(f"Coefficients NOT stored in {store}.")
 
 
 def _acquire(mmc, config, ao, slm, logger, iterations, exposure_ms,

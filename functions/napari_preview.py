@@ -10,6 +10,8 @@ napari viewers for the pymmcore-plus stack:
   an acquisition.
 * `show_verification_frame` shows one snapped frame with the localized
   point source marked.
+* `add_script_panel` docks a panel of buttons that run scripts inside
+  the GUI's process (e.g. the experiments/slm_*.py mask scripts).
 
 The last two block until the scientist closes the viewer window.
 """
@@ -140,3 +142,41 @@ def show_verification_frame(frame, loc, title="Point-source verification"):
             f"SNR {loc['snr']:.1f}"
         )
     napari.run()
+
+
+def add_script_panel(viewer, title, actions):
+    """
+    Dock a panel with one button per entry of `actions` (label ->
+    callable, run on the Qt main thread when clicked). A failing action
+    shows a napari error notification instead of taking the GUI down,
+    and the panel's status line shows the last action and its outcome.
+    Returns the panel widget.
+    """
+    from napari.utils.notifications import show_error, show_info
+    from qtpy.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
+
+    panel = QWidget()
+    layout = QVBoxLayout(panel)
+    status = QLabel("")
+    status.setWordWrap(True)
+
+    for label, action in actions.items():
+        button = QPushButton(label)
+
+        def _run(_checked=False, label=label, action=action):
+            try:
+                action()
+            except Exception as exc:
+                status.setText(f"FAILED: {label}")
+                show_error(f"{label} failed: {exc}")
+            else:
+                status.setText(f"Last: {label}")
+                show_info(f"{label}: done")
+
+        button.clicked.connect(_run)
+        layout.addWidget(button)
+
+    layout.addWidget(status)
+    layout.addStretch()
+    viewer.window.add_dock_widget(panel, name=title, area="right")
+    return panel

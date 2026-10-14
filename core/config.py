@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "microscope_config.json"
+PHASE_MASKS_FILENAME = "phase_masks.json"
 
 
 class MicroscopeConfig:
@@ -40,6 +41,26 @@ class MicroscopeConfig:
         """Full underlying dict, for cases that need it directly."""
         return self._data
 
+    @property
+    def phase_masks_path(self):
+        """The phase-mask coefficient file, next to this config file."""
+        return self.path.parent / PHASE_MASKS_FILENAME
+
 
 def load_config(config_path=DEFAULT_CONFIG_PATH):
     return MicroscopeConfig(config_path)
+
+
+def load_phase_masks(config):
+    """
+    Stored phase-mask coefficients (config/phase_masks.json, next to the
+    config file), as a dict:
+    { <method>: { <channel>: {"coefficients_rad_rms": {<Noll j>: c}, ...} } }.
+    Written by core/file_io.py's write_phase_mask_coefficients. A
+    missing file reads as empty.
+    """
+    path = config.phase_masks_path
+    if not path.exists():
+        return {}
+    with open(path, "r") as f:
+        return json.load(f)

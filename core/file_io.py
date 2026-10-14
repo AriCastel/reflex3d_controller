@@ -7,6 +7,7 @@ every save (TIFFs, metadata, anything added later) is routed through
 here, so the output format stays consistent in one place.
 """
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -171,3 +172,51 @@ def save_ao_result(run_folder, result, metadata, basename="ao_correction"):
     with open(meta_path, "w") as f:
         json.dump(metadata, f, indent=2, default=str)
     return npz_path
+
+
+def write_phase_mask_coefficients(path, method, channel, entry):
+    """
+    Store one channel's phase-mask coefficients in the phase-mask file
+    (config/phase_masks.json), under <method>.<channel>, replacing any
+    previous entry there and preserving everything else. The previous
+    file is copied to phase_masks.json.bak first.
+
+    Returns (path, backup_path or None if the file didn't exist yet).
+    """
+    path = Path(path)
+    data, backup_path = {}, None
+    if path.exists():
+        with open(path, "r") as f:
+            data = json.load(f)
+        backup_path = path.with_suffix(".json.bak")
+        shutil.copyfile(path, backup_path)
+
+    data.setdefault(method, {})[channel] = entry
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+    return path, backup_path
+
+
+def save_phase_mask(run_folder, mask, info, basename="slm_mask"):
+    """
+    Record the mask shown on the SLM during a run: the full-SLM uint8
+    mask as a TIFF, plus what it is made of (preset, Zernike
+    coefficients per channel, where they came from) as a .json.
+    """
+    run_folder = Path(run_folder)
+    out_path = run_folder / f"{basename}.tif"
+    tifffile.imwrite(out_path, np.asarray(mask, dtype=np.uint8))
+    with open(run_folder / f"{basename}_metadata.json", "w") as f:
+        json.dump(info, f, indent=2, default=str)
+    return out_path
+
+
+def load_ao_metadata(path):
+    """
+    Read an aberration-correction run's metadata, given the run folder
+    or its ao_correction_metadata.json. Returns (metadata, run_folder).
+    """
+    path = Path(path)
+    meta_path = path / "ao_correction_metadata.json" if path.is_dir() else path
+    with open(meta_path, "r") as f:
+        return json.load(f), meta_path.parent

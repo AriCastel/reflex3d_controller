@@ -1,0 +1,4 @@
+{
+  "_comment": "Stored phase-mask coefficients, by method then channel: <method>.<channel>.coefficients_rad_rms maps Noll index -> Zernike coefficient in rad RMS (RMS-normalized, Noll order, over the channel's pupil fourier_plane.channels.<channel>.center_px / fourier_plane.radius_px). Written by experiments/aberration_correction.py (when you accept a result) and experiments/store_ao_correction.py, with the previous file backed up to phase_masks.json.bak; read by functions/imaging_masks.py. 'spsa' = the SPSA stochastic-gradient-descent correction; other AO methods get their own key.",
+  "spsa": {}
+}

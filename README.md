@@ -19,6 +19,8 @@ graphics" device), through `CMMCorePlus`.
 
 ```
 config/microscope_config.json   All hardware/software properties in one place
+config/phase_masks.json         Stored phase-mask coefficients (AO corrections),
+                                 by method then channel
 core/                            General infrastructure — never experiment-specific
   config.py                        Loads microscope_config.json
   session.py                       Creates the run folder for each experiment
@@ -45,6 +47,8 @@ functions/zernike.py             Zernike polynomials (incl. Noll-indexed, RMS-no
 functions/psf_metrics.py         Guide-star PSF metrics for AO (pluggable registry)
 functions/adaptive_optics.py     Pupil Zernike masks, guide-star camera, SPSA optimizer,
                                   results figure
+functions/imaging_masks.py       Imaging phase masks per channel (stored correction,
+                                  EDOF, both, flat), running-GUI core lookup
 functions/phase_masks.py         Flat masks, Zernike probe patches, raster positions
 functions/localization.py        Point-source centroid localization
 experiments/                     Minimal scripts: parameters + function calls only
@@ -54,6 +58,12 @@ experiments/                     Minimal scripts: parameters + function calls on
   fourier_plane_alignment.py       Locates the pupil centre on the SLM (pymmcore-plus)
   fourier_plane_refinement.py      Refines that centre with a fine raster around it
   aberration_correction.py         Sensorless AO on a guide star (pymmcore-plus)
+  store_ao_correction.py           Store an earlier AO run's coefficients in phase_masks.json
+  imaging_gui.py                   napari-micromanager GUI + 'SLM phase mask' panel
+  slm_aberration_correction.py     Load a mask into the running GUI: stored correction,
+  slm_edof.py                       primary-spherical EDOF, both, or flat (both
+  slm_aberration_correction_edof.py channels)
+  slm_flat.py
 calibration/                     Infrequent, complex routines
   fourier_alignment.py             Fourier-plane alignment acquisition
   fourier_refinement.py            Helpers for the refinement pass (stored centres)
@@ -69,6 +79,9 @@ tests/
   sim_validate.py                  Centre recovery on a simulated pupil
   ao_sim_test.py                   Aberration correction on a simulated microscope
                                     with a known aberration (python tests/ao_sim_test.py)
+  imaging_masks_test.py            phase_masks.json store, imaging masks, mask scripts and
+                                    the timelapse's PHASE_MASK on a simulated microscope
+                                    (xvfb-run -a python tests/imaging_masks_test.py)
 ```
 
 ## Legacy vs. pymmcore-plus
@@ -320,3 +333,61 @@ Noll index), and the coefficients are printed.
   0.5 overshot badly first and took ~3x longer. `blank_laser_during_settle`
   switches the laser off while the SLM settles, cutting illumination
   ~in half, if the laser switches cleanly and fast.
+* **Storing the result.** After the figure is closed, the script asks
+  whether to store the coefficients in `config/phase_masks.json`, under
+  the method (`spsa`) and the channel, replacing what was stored there
+  (the previous file is kept as `phase_masks.json.bak`). For a run that
+  wasn't stored, `python -m experiments.store_ao_correction <run folder>`
+  does the same from its `ao_correction_metadata.json`. Other AO
+  methods will get their own key next to `spsa`.
+
+
+## Imaging with phase masks
+
+Each channel's pupil on the SLM gets a sum of Zernike modes (same
+convention as the AO: Noll order, rad RMS), from the stored aberration
+correction and/or the extended-depth-of-field (EDOF) terms in the
+`imaging_masks` config section (primary spherical, Noll 11). Four
+presets, one script each, applied to both channels
+(`imaging_masks.channels`):
+
+| script | mask |
+| --- | --- |
+| `slm_aberration_correction.py` | stored correction (`imaging_masks.aberration_correction_method`, `spsa`) |
+| `slm_edof.py` | primary spherical only (`imaging_masks.edof_zernike_rad_rms`) |
+| `slm_aberration_correction_edof.py` | both, added term by term (the correction's own Noll 11 plus the EDOF amount) |
+| `slm_flat.py` | completely flat |
+
+**From the GUI.** Micro-Manager hardware can only be open in one
+process, and the SLM only shows a mask while the process that loaded it
+is alive, so the mask scripts run *inside* the GUI's process:
+
+1. `python -m experiments.imaging_gui` opens napari with
+   napari-micromanager on the hardware config in `pymmcore_plus` and a
+   flat mask on the SLM.
+2. Position the sample and set exposure, laser power etc. with the
+   napari-micromanager widgets.
+3. Load the mask with a button in the **SLM phase mask** panel, or run
+   the script from napari's console (`%run experiments/slm_edof.py`;
+   with your own napari-micromanager window, give the full path). Each
+   load writes a small run folder with the mask (`slm_mask.tif`) and
+   what it is made of (`slm_mask_metadata.json`: preset, coefficients
+   per channel, which stored correction), so data can be matched to the
+   mask that was on the SLM. A missing stored correction is reported
+   and the SLM is left as it was; masks aren't changed while an
+   acquisition is running.
+4. Start the timelapse from napari-micromanager's MDA widget. The mask
+   stays up until another one is loaded or the GUI is closed.
+
+**Headless timelapse.** `experiments/example_timelapse_mda.py` takes
+`PHASE_MASK` (one of the four presets, default `"flat"`) and
+`PHASE_MASK_CHANNELS` at the top. The mask is built before any hardware
+is touched (so a missing correction stops the run before it starts),
+shown for the whole acquisition, and saved into the run folder.
+
+The EDOF amplitude (`edof_zernike_rad_rms`, default 2.0 rad RMS on
+Noll 11, ~1 wave peak-to-valley) is a starting point to tune on the
+instrument; its sign sets which side of focus the depth of field
+extends towards. Being an RMS-normalized Zernike term, it has no
+defocus component, so the best focus stays put.
+
