@@ -23,11 +23,16 @@ The optimizer (`spsa_minimize`) only sees an `evaluate(coefficients)
 functions/psf_metrics.py metric. Never writes to disk.
 """
 import time
+from datetime import datetime
 
 import numpy as np
 
 from functions.phase_masks import flat_mask, phase_to_grey
 from functions.zernike import NOLL_NAMES, noll_zernike
+
+
+#: Name the SPSA correction is stored under in config/phase_masks.json.
+AO_METHOD = "spsa"
 
 
 # --------------------------------------------------------------- masks
@@ -76,8 +81,15 @@ class ZernikePupil:
 
     def mask(self, coefficients):
         """Full-SLM uint8 mask: flat background, Zernike phase in the pupil."""
+        return self.paint(self.flat.copy(), coefficients)
+
+    def paint(self, mask, coefficients):
+        """
+        Write the Zernike phase into this pupil of an existing full-SLM
+        mask (in place, and returned), leaving the rest of it untouched -
+        e.g. to put each channel's correction in its own pupil of one mask.
+        """
         phase = np.tensordot(np.asarray(coefficients, np.float32), self.basis, axes=1)
-        mask = self.flat.copy()
         region = mask[self.box]
         region[self.inside] = phase_to_grey(phase[self.inside] + self.flat_phase, self.grey_2pi)
         return mask
@@ -271,6 +283,27 @@ def run_aberration_correction(mmc, config, slm, pupil, metric, dark, logger,
         "phase": pupil.phase(coefficients),
         "elapsed_s": elapsed,
         "n_snaps": n_evaluations + 3,
+    }
+
+
+def phase_mask_entry(metadata, run_folder):
+    """
+    The config/phase_masks.json entry for one channel's correction,
+    built from a run's ao_correction_metadata.json contents (so the
+    same entry can be stored straight after a run or later, from its
+    saved metadata).
+    """
+    return {
+        "coefficients_rad_rms": metadata["coefficients_rad_rms"],
+        "saved_on": datetime.now().isoformat(sep=" ", timespec="seconds"),
+        "measured_on": metadata.get("finished_at"),
+        "run": str(run_folder),
+        "metric": metadata.get("metric"),
+        "metric_flat": metadata.get("metric_original_end"),
+        "metric_corrected": metadata.get("metric_corrected_end"),
+        "power_ratio_corrected_over_flat": metadata.get("power_ratio_corrected_over_original"),
+        "pupil_center_px": metadata.get("fourier_center_px"),
+        "pupil_radius_px": metadata.get("pupil_radius_px"),
     }
 
 
