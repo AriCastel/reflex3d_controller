@@ -68,7 +68,7 @@
     "_comment": "monitor_index is used only by the legacy pycromanager path (functions/slm.py's SLMDisplay, a plain secondary-display window). device_label is used only by the pymmcore-plus path (functions/mmcore_slm.py's MMCoreSLM) - it's the Micro-Manager device label for the Generic SLM ('Spatial light modulator controlled through computer graphics') device in your MM hardware config, and must match exactly. resolution must match that device's resolution too (checked at runtime by MMCoreSLM; a mismatch raises an error). grey_level_2pi is the grey level corresponding to a full 2*pi phase stroke, from the device phase calibration (LUT) - set this properly or every phase mask will be miscalibrated. settle_frames * (1/refresh_rate_hz) is how long the code waits after pushing a mask before snapping; 3 frames at 30 Hz = 100 ms, which covers both the frame period and liquid-crystal relaxation."
   },
   "fourier_plane": {
-    "radius_px": 360,
+    "radius_px": 362,
     "NA": 1.1,
     "focal_length_mm": 200,
     "back_aperture_diameter_mm": 6.6,
@@ -85,12 +85,12 @@
       },
       "right": {
         "center_px": [
-          1432.1861133354073,
-          486.85678576869213
+          1440.7478842425514,
+          451.25678735120187
         ],
-        "calibrated_on": "2026-10-08 18:16:02",
+        "calibrated_on": "2026-10-15 16:24:59",
         "calibration_mode": "tilt_x",
-        "calibration_run": "C:\\Datos\\Alex_Castelblancov\\20261008\\20261008_fourier_plane_alignment_2",
+        "calibration_run": "C:\\Datos\\Alex_Castelblancov\\20261015\\20261015_fourier_plane_refinement_3",
         "_comment": "Polarization channel imaged onto the RIGHT half of the camera sensor."
       }
     },
@@ -140,18 +140,18 @@
     "metric": {
       "name": "power_weighted_second_moment",
       "params": {
-        "radius_px": 15,
+        "radius_px": 10,
         "power_weight": 1.0
       }
     },
-    "iterations": 200,
-    "gain": 0.1,
-    "perturbation_rad": 0.3,
+    "iterations": 150,
+    "gain": 0.09,
+    "perturbation_rad": 0.2,
     "momentum": 0.0,
     "max_abs_coefficient_rad": 3.0,
-    "patience": 30,
+    "patience": 60,
     "seed": null,
-    "exposure_ms": 30,
+    "exposure_ms": 50,
     "laser_power_mW": 200.0,
     "guide_star_roi_px": 64,
     "dark_frames": 100,
