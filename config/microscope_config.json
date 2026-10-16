@@ -49,7 +49,15 @@
       "x": 0.0,
       "y": 0.0,
       "z": 0.0
-    }
+    },
+    "axis_properties": {
+      "horizontal": "Current Y",
+      "vertical": "Current Z",
+      "depth": "Current X"
+    },
+    "microstep_um": 0.0625,
+    "settle_s": 0.2,
+    "_comment": "axis_properties maps the axes as seen from the CAMERA - 'horizontal' and 'vertical' in the image, 'depth' along the objective-sample distance - to the stage property that moves along each ('Current X', 'Current Y' or 'Current Z'). The stage is sometimes re-mounted for an experiment, so check this mapping whenever it is; positions are always set through these properties (functions/mmcore_micromanipulator.py), the most reliable way to move this stage. The shipped depth = 'Current X' is what the previous setup's Z-stack script scanned; horizontal/vertical are placeholders to verify. microstep_um is the stage's smallest displacement (62.5 nm); scan steps must be whole multiples of it. settle_s is the wait after each move before snapping."
   },
   "slm": {
     "model": "Meadowlark Optics 8-bit LC-SLM",
@@ -168,5 +176,15 @@
       "11": 2.0
     },
     "_comment": "Phase masks for imaging (functions/imaging_masks.py), used by experiments/slm_*.py from the napari GUI (experiments/imaging_gui.py) and by experiments/example_timelapse_mda.py's PHASE_MASK. channels are the pupils that get a mask. aberration_correction_method picks which stored correction in config/phase_masks.json is used (coefficients are stored per method and channel; 'spsa' is the stochastic-gradient-descent correction from experiments/aberration_correction.py). edof_zernike_rad_rms is the extended-depth-of-field mask, Noll index -> rad RMS (same RMS-normalized Zernike convention as the correction): primary spherical, Noll 11, whose peak-to-valley is ~3.35x the coefficient, so 2.0 rad RMS is ~6.7 rad (~1 wave) - a starting point to tune on the instrument; the sign sets which side of focus the depth of field extends towards. With aberration correction + EDOF the two are added term by term on each channel."
+  },
+  "psf_characterization": {
+    "half_range_um": 3.0,
+    "step_um": 0.125,
+    "overshoot_steps": 2,
+    "exposure_ms": 50,
+    "laser_power_mW": 50.0,
+    "guide_star_roi_px": 128,
+    "dark_frames": 200,
+    "_comment": "3D PSF characterization (experiments/psf_characterization.py): a depth stack of the guide star from +half_range_um to -half_range_um around its starting depth, in steps of step_um (a whole number of micromanipulator.microstep_um microsteps; 0.125 um = 2). Because of mechanical backlash the stage first overshoots overshoot_steps steps ABOVE the top of the range, comes back down to it, and then only moves down during the scan. guide_star_roi_px is the side of the square camera crop around the guide star - large enough for the most defocused PSF (null = keep the whole channel ROI). dark_frames laser-off frames are averaged and subtracted from the stack."
   }
 }

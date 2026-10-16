@@ -32,6 +32,8 @@ functions/                       General-purpose hardware control + orchestratio
   laser.py                         (legacy, pycromanager) Laser on/off/power
   mmcore_laser.py                  pymmcore-plus equivalent of laser.py
   camera.py                        (legacy, pycromanager) Exposure + snap
+  mmcore_micromanipulator.py       Sutter MPC stage in camera axes (config axis map),
+                                    backlash-safe one-direction scans
   mmcore_camera.py                 pymmcore-plus per-channel camera ROIs
                                     (camera.channel_rois in the config)
   slm.py                           (legacy) SLM as a secondary-display window
@@ -59,6 +61,7 @@ experiments/                     Minimal scripts: parameters + function calls on
   fourier_plane_refinement.py      Refines that centre with a fine raster around it
   aberration_correction.py         Sensorless AO on a guide star (pymmcore-plus)
   store_ao_correction.py           Store an earlier AO run's coefficients in phase_masks.json
+  psf_characterization.py          Depth stack of a guide star with a chosen phase mask
   imaging_gui.py                   napari-micromanager GUI + 'SLM phase mask' panel
   slm_aberration_correction.py     Load a mask into the running GUI: stored correction,
   slm_edof.py                       primary-spherical EDOF, both, or flat (both
@@ -79,6 +82,8 @@ tests/
   sim_validate.py                  Centre recovery on a simulated pupil
   ao_sim_test.py                   Aberration correction on a simulated microscope
                                     with a known aberration (python tests/ao_sim_test.py)
+  psf_characterization_test.py     PSF depth stack on a simulated microscope whose stage
+                                    has backlash (python tests/psf_characterization_test.py)
   imaging_masks_test.py            phase_masks.json store, imaging masks, mask scripts and
                                     the timelapse's PHASE_MASK on a simulated microscope
                                     (xvfb-run -a python tests/imaging_masks_test.py)
@@ -390,4 +395,45 @@ Noll 11, ~1 wave peak-to-valley) is a starting point to tune on the
 instrument; its sign sets which side of focus the depth of field
 extends towards. Being an RMS-normalized Zernike term, it has no
 defocus component, so the best focus stays put.
+
+
+## 3D PSF characterization
+
+`experiments/psf_characterization.py` records a depth (Z) stack of a
+guide star with any of the imaging phase masks, by moving the
+micromanipulator the sample is mounted on. Thanks to **Luis Bastidas**,
+who first worked out how to drive this micromanipulator and wrote the
+original Z-stack script this is based on.
+
+Flow: the live ROI preview -> choose the channel -> confirm the guide
+star in the verification frame -> the camera is cropped to a square
+around it (`guide_star_roi_px`) -> choose the phase mask (Enter = flat)
+-> confirm the scan -> the stack -> `dark_frames` (200) laser-off frames
+with the same ROI, whose mean is subtracted from every plane -> the stage
+returns to its starting depth. The run folder gets `psf_zstack.tif`
+(float32, dark-subtracted, ImageJ ZYX with the Z spacing, top of the range
+first), `psf_zstack_metadata.json` (commanded and read-back depth of every
+plane, settings, mask), `dark_mean.tif` and the mask. Defaults are in the
+`psf_characterization` config section (+/-3 um in 0.125 um steps).
+
+Things the micromanipulator code (`functions/mmcore_micromanipulator.py`)
+takes care of:
+
+* **Camera axes, not stage axes.** The stage is sometimes re-mounted, so
+  'Current Z' isn't necessarily the objective-sample distance.
+  `micromanipulator.axis_properties` maps the camera's `horizontal`,
+  `vertical` and `depth` axes to the stage properties; the scan moves
+  whatever `depth` maps to. **Check it whenever the stage is re-mounted.**
+  The shipped `depth = "Current X"` is what the previous setup's script
+  scanned; horizontal/vertical are placeholders.
+* **Positions are set through 'Current X/Y/Z'**, the most reliable way to
+  move this stage.
+* **Backlash.** The microstep is 62.5 nm, so the step must be a whole
+  number of microsteps (checked before anything moves), but a position
+  is only reproducible from one direction. The stage first goes
+  `overshoot_steps` steps *above* the top of the range, comes back down
+  to it, and then only moves down. The return to the start position is
+  approached from above in the same way.
+* If anything fails mid-scan, the laser is switched off, the stage goes
+  back to its starting depth and the camera ROI is cleared.
 

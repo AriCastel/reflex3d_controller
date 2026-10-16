@@ -220,3 +220,29 @@ def load_ao_metadata(path):
     meta_path = path / "ao_correction_metadata.json" if path.is_dir() else path
     with open(meta_path, "r") as f:
         return json.load(f), meta_path.parent
+
+
+def save_zstack_tiff(run_folder, stack, metadata, z_step_um=None, pixel_size_um=None,
+                     filename="psf_zstack.tif"):
+    """
+    Save a depth stack (Z, Y, X) as an ImageJ hyperstack (float32 kept
+    as is, so a dark-subtracted stack keeps its negative noise), with the
+    Z spacing and pixel size in the ImageJ calibration when given, plus
+    a metadata .json sidecar (per-plane positions etc.).
+    """
+    run_folder = Path(run_folder)
+    stack = np.asarray(stack)
+    if stack.ndim != 3:
+        raise ValueError(f"Expected a (Z, Y, X) stack, got shape {stack.shape}")
+    ij_meta = {"axes": "ZYX"}
+    kwargs = {}
+    if z_step_um:
+        ij_meta.update(spacing=float(z_step_um), unit="um")
+    if pixel_size_um:
+        kwargs["resolution"] = (1.0 / pixel_size_um, 1.0 / pixel_size_um)
+        ij_meta["unit"] = "um"
+    out_path = run_folder / filename
+    tifffile.imwrite(out_path, stack, imagej=True, metadata=ij_meta, **kwargs)
+    with open(run_folder / f"{Path(filename).stem}_metadata.json", "w") as f:
+        json.dump(metadata, f, indent=2, default=str)
+    return out_path
