@@ -1,0 +1,38 @@
+{
+  "_comment": "Stored phase-mask coefficients, by method then channel: <method>.<channel>.coefficients_rad_rms maps Noll index -> Zernike coefficient in rad RMS (RMS-normalized, Noll order, over the channel's pupil fourier_plane.channels.<channel>.center_px / fourier_plane.radius_px). Written by experiments/aberration_correction.py (when you accept a result) and experiments/store_ao_correction.py, with the previous file backed up to phase_masks.json.bak; read by functions/imaging_masks.py. 'spsa' = the SPSA stochastic-gradient-descent correction; other AO methods get their own key.",
+  "spsa": {
+    "right": {
+      "coefficients_rad_rms": {
+        "5": 0.09206682428548331,
+        "6": 0.10127275814669158,
+        "7": -0.22553661781393575,
+        "8": 0.10294747855846807,
+        "9": 0.11313121381112547,
+        "10": 0.05529186825879631,
+        "11": 0.05722415113442664,
+        "12": 0.07268154377240586,
+        "13": -0.058173803882812486,
+        "14": -0.17614277457499314,
+        "15": 0.015044382213489619
+      },
+      "saved_on": "2026-10-15 17:21:41",
+      "measured_on": "2026-10-15 17:20:48",
+      "run": "C:\\Datos\\Alex_Castelblancov\\20261015\\20261015_aberration_correction_4",
+      "metric": {
+        "name": "power_weighted_second_moment",
+        "params": {
+          "radius_px": 10,
+          "power_weight": 1.0
+        }
+      },
+      "metric_flat": 12.374879119833228,
+      "metric_corrected": 10.768903331534924,
+      "power_ratio_corrected_over_flat": 1.0105769634246826,
+      "pupil_center_px": [
+        1440.7478842425514,
+        451.25678735120187
+      ],
+      "pupil_radius_px": 362
+    }
+  }
+}

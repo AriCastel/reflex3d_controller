@@ -1,0 +1,222 @@
+"""
+core/file_io.py
+
+The sole authority for all disk writes in this codebase. Nothing in
+functions/ or experiments/ should touch the filesystem directly —
+every save (TIFFs, metadata, anything added later) is routed through
+here, so the output format stays consistent in one place.
+"""
+import json
+import shutil
+from pathlib import Path
+
+import numpy as np
+import tifffile
+
+
+def save_timelapse_tiff(run_folder, frames, metadata, filename="timelapse.tif"):
+    """
+    Save a timelapse as an ImageJ-compatible hyperstack with TZCYX axis
+    ordering (kept even for this single-Z/single-channel case, for
+    forward compatibility with planned 4D T+Z acquisitions).
+
+    Parameters
+    ----------
+    run_folder : Path or str
+    frames : np.ndarray
+        Shape (T, Y, X) for this single-channel, single-plane use case.
+        Reshaped internally to (T, Z=1, C=1, Y, X).
+    metadata : dict
+        Per-run metadata to embed (exposure, laser power, SLM mask note,
+        per-frame timestamps, etc.).
+    filename : str
+
+    Returns
+    -------
+    Path to the written TIFF.
+    """
+    run_folder = Path(run_folder)
+    stack = np.asarray(frames)
+
+    if stack.ndim == 3:
+        t, y, x = stack.shape
+        stack = stack.reshape(t, 1, 1, y, x)  # -> TZCYX
+    elif stack.ndim != 5:
+        raise ValueError(f"Expected a (T,Y,X) or (T,Z,C,Y,X) array, got shape {stack.shape}")
+
+    out_path = run_folder / filename
+    tifffile.imwrite(
+        out_path,
+        stack,
+        imagej=True,
+        metadata={"axes": "TZCYX"},
+    )
+
+    # Full metadata (including things ImageJ tags can't hold well, like
+    # per-frame timestamp lists) is also kept as a sidecar JSON.
+    meta_path = run_folder / f"{Path(filename).stem}_metadata.json"
+    with open(meta_path, "w") as f:
+        json.dump(metadata, f, indent=2, default=str)
+
+    return out_path
+
+
+def save_frame_tiff(run_folder, frame, metadata=None, filename="frame.tif"):
+    """Save a single 2D frame (e.g. the point-source verification snap)."""
+    run_folder = Path(run_folder)
+    out_path = run_folder / filename
+    tifffile.imwrite(out_path, np.asarray(frame))
+    if metadata is not None:
+        meta_path = run_folder / f"{Path(filename).stem}_metadata.json"
+        with open(meta_path, "w") as f:
+            json.dump(metadata, f, indent=2, default=str)
+    return out_path
+
+
+def save_alignment_map(run_folder, x_centers, y_centers, d2_map, metadata,
+                       basename="fourier_map"):
+    """
+    Save a Fourier-alignment d^2 map.
+
+    Writes three things, deliberately redundantly: an .npz for exact
+    round-tripping and re-analysis, a .csv for quick inspection in any
+    other tool, and a metadata .json.
+    """
+    run_folder = Path(run_folder)
+
+    npz_path = run_folder / f"{basename}.npz"
+    np.savez(
+        npz_path,
+        x_centers=np.asarray(x_centers),
+        y_centers=np.asarray(y_centers),
+        d2_map=np.asarray(d2_map),
+    )
+
+    csv_path = run_folder / f"{basename}.csv"
+    d2 = np.asarray(d2_map)
+    with open(csv_path, "w") as f:
+        f.write("slm_x_px,slm_y_px,d_squared_camera_px2\n")
+        for iy, y in enumerate(y_centers):
+            for ix, x in enumerate(x_centers):
+                f.write(f"{x:.2f},{y:.2f},{d2[iy, ix]:.6f}\n")
+
+    meta_path = run_folder / f"{basename}_metadata.json"
+    with open(meta_path, "w") as f:
+        json.dump(metadata, f, indent=2, default=str)
+
+    return npz_path
+
+
+def save_figure(run_folder, fig, filename="fourier_map_preview.png", dpi=150):
+    """Save a matplotlib figure into the run folder."""
+    run_folder = Path(run_folder)
+    out_path = run_folder / filename
+    fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
+    return out_path
+
+
+def write_fourier_center(config_path, channel, center_xy, extra=None):
+    """
+    Write a measured Fourier-plane centre into the JSON config, under
+    fourier_plane.channels.<channel>.center_px, preserving everything
+    else in the file.
+
+    A backup of the previous config is written alongside it before the
+    update, since this rewrites a file the whole codebase depends on.
+
+    Returns (config_path, backup_path).
+    """
+    config_path = Path(config_path)
+    with open(config_path, "r") as f:
+        data = json.load(f)
+
+    backup_path = config_path.with_suffix(".json.bak")
+    with open(backup_path, "w") as f:
+        json.dump(data, f, indent=2)
+
+    fourier = data.setdefault("fourier_plane", {})
+    channels = fourier.setdefault("channels", {})
+    entry = channels.setdefault(channel, {})
+    entry["center_px"] = [float(center_xy[0]), float(center_xy[1])]
+    if extra:
+        entry.update(extra)
+
+    with open(config_path, "w") as f:
+        json.dump(data, f, indent=2)
+
+    return config_path, backup_path
+
+
+def save_ao_result(run_folder, result, metadata, basename="ao_correction"):
+    """
+    Save an aberration-correction run: an .npz with the arrays (final
+    coefficients, per-iteration metric and coefficients, PSFs, phase)
+    and a metadata .json, which also lists the final coefficients by
+    Noll index so they're readable without numpy.
+    """
+    run_folder = Path(run_folder)
+    history = result["history"]
+    npz_path = run_folder / f"{basename}.npz"
+    np.savez(
+        npz_path,
+        coefficients=np.asarray(result["coefficients"]),
+        iteration=np.asarray(history["iteration"]),
+        metric=np.asarray(history["metric"]),
+        coefficients_history=np.asarray(history["params"]),
+        reference_psf=result["reference_psf"],
+        original_psf=result["original_psf"],
+        corrected_psf=result["corrected_psf"],
+        phase=result["phase"],
+    )
+    meta_path = run_folder / f"{basename}_metadata.json"
+    with open(meta_path, "w") as f:
+        json.dump(metadata, f, indent=2, default=str)
+    return npz_path
+
+
+def write_phase_mask_coefficients(path, method, channel, entry):
+    """
+    Store one channel's phase-mask coefficients in the phase-mask file
+    (config/phase_masks.json), under <method>.<channel>, replacing any
+    previous entry there and preserving everything else. The previous
+    file is copied to phase_masks.json.bak first.
+
+    Returns (path, backup_path or None if the file didn't exist yet).
+    """
+    path = Path(path)
+    data, backup_path = {}, None
+    if path.exists():
+        with open(path, "r") as f:
+            data = json.load(f)
+        backup_path = path.with_suffix(".json.bak")
+        shutil.copyfile(path, backup_path)
+
+    data.setdefault(method, {})[channel] = entry
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+    return path, backup_path
+
+
+def save_phase_mask(run_folder, mask, info, basename="slm_mask"):
+    """
+    Record the mask shown on the SLM during a run: the full-SLM uint8
+    mask as a TIFF, plus what it is made of (preset, Zernike
+    coefficients per channel, where they came from) as a .json.
+    """
+    run_folder = Path(run_folder)
+    out_path = run_folder / f"{basename}.tif"
+    tifffile.imwrite(out_path, np.asarray(mask, dtype=np.uint8))
+    with open(run_folder / f"{basename}_metadata.json", "w") as f:
+        json.dump(info, f, indent=2, default=str)
+    return out_path
+
+
+def load_ao_metadata(path):
+    """
+    Read an aberration-correction run's metadata, given the run folder
+    or its ao_correction_metadata.json. Returns (metadata, run_folder).
+    """
+    path = Path(path)
+    meta_path = path / "ao_correction_metadata.json" if path.is_dir() else path
+    with open(meta_path, "r") as f:
+        return json.load(f), meta_path.parent

@@ -1,0 +1,71 @@
+{
+  "_comment": "Stored phase-mask coefficients, by method then channel: <method>.<channel>.coefficients_rad_rms maps Noll index -> Zernike coefficient in rad RMS (RMS-normalized, Noll order, over the channel's pupil fourier_plane.channels.<channel>.center_px / fourier_plane.radius_px). Written by experiments/aberration_correction.py (when you accept a result) and experiments/store_ao_correction.py, with the previous file backed up to phase_masks.json.bak; read by functions/imaging_masks.py. 'spsa' = the SPSA stochastic-gradient-descent correction; other AO methods get their own key.",
+  "spsa": {
+    "right": {
+      "coefficients_rad_rms": {
+        "5": 0.09206682428548331,
+        "6": 0.10127275814669158,
+        "7": -0.22553661781393575,
+        "8": 0.10294747855846807,
+        "9": 0.11313121381112547,
+        "10": 0.05529186825879631,
+        "11": 0.05722415113442664,
+        "12": 0.07268154377240586,
+        "13": -0.058173803882812486,
+        "14": -0.17614277457499314,
+        "15": 0.015044382213489619
+      },
+      "saved_on": "2026-10-15 17:21:41",
+      "measured_on": "2026-10-15 17:20:48",
+      "run": "C:\\Datos\\Alex_Castelblancov\\20261015\\20261015_aberration_correction_4",
+      "metric": {
+        "name": "power_weighted_second_moment",
+        "params": {
+          "radius_px": 10,
+          "power_weight": 1.0
+        }
+      },
+      "metric_flat": 12.374879119833228,
+      "metric_corrected": 10.768903331534924,
+      "power_ratio_corrected_over_flat": 1.0105769634246826,
+      "pupil_center_px": [
+        1440.7478842425514,
+        451.25678735120187
+      ],
+      "pupil_radius_px": 362
+    },
+    "left": {
+      "coefficients_rad_rms": {
+        "5": -0.08231930948964196,
+        "6": 0.4049676110642887,
+        "7": -0.08618842013913981,
+        "8": -0.27089412319004536,
+        "9": -0.09038543026735081,
+        "10": 0.053093602702976236,
+        "11": -0.013660245340024864,
+        "12": -0.007234016992486637,
+        "13": 0.022049520761306927,
+        "14": -0.002981231843950216,
+        "15": -0.10547507753028358
+      },
+      "saved_on": "2026-10-15 17:28:28",
+      "measured_on": "2026-10-15 17:27:50",
+      "run": "C:\\Datos\\Alex_Castelblancov\\20261015\\20261015_aberration_correction_5",
+      "metric": {
+        "name": "power_weighted_second_moment",
+        "params": {
+          "radius_px": 10,
+          "power_weight": 1.0
+        }
+      },
+      "metric_flat": 15.084037151347356,
+      "metric_corrected": 11.332051480930252,
+      "power_ratio_corrected_over_flat": 1.044520378112793,
+      "pupil_center_px": [
+        550.2951508436878,
+        531.2284934646849
+      ],
+      "pupil_radius_px": 362
+    }
+  }
+}
