@@ -32,6 +32,8 @@ functions/                       General-purpose hardware control + orchestratio
   laser.py                         (legacy, pycromanager) Laser on/off/power
   mmcore_laser.py                  pymmcore-plus equivalent of laser.py
   camera.py                        (legacy, pycromanager) Exposure + snap
+  mm2_slm.py                       (pycromanager) the Generic SLM device of a running
+                                    Micro-Manager 2.0 instance
   mmcore_micromanipulator.py       Sutter MPC stage in camera axes (config axis map),
                                     backlash-safe one-direction scans
   mmcore_camera.py                 pymmcore-plus per-channel camera ROIs
@@ -67,6 +69,8 @@ experiments/                     Minimal scripts: parameters + function calls on
   slm_edof.py                       primary-spherical EDOF, both, or flat (both
   slm_aberration_correction_edof.py channels)
   slm_flat.py
+  mm2_slm_*.py                     The same four mask loaders for a running Micro-Manager
+                                    2.0 instance (pycromanager)
 calibration/                     Infrequent, complex routines
   fourier_alignment.py             Fourier-plane alignment acquisition
   fourier_refinement.py            Helpers for the refinement pass (stored centres)
@@ -82,6 +86,8 @@ tests/
   sim_validate.py                  Centre recovery on a simulated pupil
   ao_sim_test.py                   Aberration correction on a simulated microscope
                                     with a known aberration (python tests/ao_sim_test.py)
+  mm2_slm_test.py                  The Micro-Manager 2.0 mask scripts against a fake
+                                    pycromanager Core (python tests/mm2_slm_test.py)
   psf_characterization_test.py     PSF depth stack on a simulated microscope whose stage
                                     has backlash (python tests/psf_characterization_test.py)
   imaging_masks_test.py            phase_masks.json store, imaging masks, mask scripts and
@@ -383,6 +389,25 @@ is alive, so the mask scripts run *inside* the GUI's process:
    acquisition is running.
 4. Start the timelapse from napari-micromanager's MDA widget. The mask
    stays up until another one is loaded or the GUI is closed.
+
+**From Micro-Manager 2.0.** When the microscope is run from a
+Micro-Manager 2.0 instance instead, use the `mm2_` versions from a
+terminal while Micro-Manager is open:
+
+```
+python -m experiments.mm2_slm_aberration_correction
+python -m experiments.mm2_slm_edof
+python -m experiments.mm2_slm_aberration_correction_edof
+python -m experiments.mm2_slm_flat
+```
+
+They build exactly the same masks and push them through Micro-Manager's
+Generic SLM device (`slm.device_label`) via pycromanager, so the mask
+stays up after the script exits, until another is loaded. Micro-Manager
+must have the pycro-manager server enabled (Tools > Options > "Run
+pycro-manager server on port 4827") and the Generic SLM device in its
+hardware config, at `slm.resolution`. Each load is recorded in a run
+folder as above.
 
 **Headless timelapse.** `experiments/example_timelapse_mda.py` takes
 `PHASE_MASK` (one of the four presets, default `"flat"`) and
