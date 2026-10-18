@@ -11,10 +11,8 @@ functions/adaptive_optics.py), built from
   imaging_masks.edof_zernike_rad_rms (primary spherical, Noll 11),
 
 added together when both are used. PRESETS names the four
-combinations the experiments/slm_*.py scripts and the timelapse use.
+combinations experiments/load_phase_mask.py and the timelapse use.
 
-Also finds the CMMCorePlus a running napari GUI drives, so a mask
-script run from inside that GUI addresses the same hardware.
 Never writes to disk.
 """
 from datetime import datetime
@@ -138,44 +136,3 @@ def describe_imaging_mask(info):
             lines.append(f"    Noll {j:>2} {NOLL_NAMES.get(int(j), ''):<32} {c:+.4f} rad RMS")
     lines += [f"  WARNING: {w}" for w in info["warnings"]]
     return "\n".join(lines)
-
-
-def get_running_core(config):
-    """
-    The CMMCorePlus that the napari GUI running in THIS process drives
-    (napari-micromanager's core, or the CMMCorePlus singleton our own
-    launcher, experiments/imaging_gui.py, creates).
-
-    Micro-Manager hardware can only be open in one process, and the SLM
-    only shows a mask while the process that loaded it is alive, so a
-    mask script must run inside the GUI's process - e.g. from napari's
-    console with %run - rather than as a separate `python` command.
-    Raises if no core with the SLM device loaded is found.
-    """
-    from pymmcore_plus import CMMCorePlus
-
-    label = config.get("slm", "device_label", default="SLM")
-    candidates = []
-    try:
-        from napari_micromanager import get_core
-        candidates.append(get_core())
-    except Exception:  # not installed, an older version, or no GUI open
-        pass
-    candidates.append(CMMCorePlus.instance())
-    for mmc in candidates:
-        if label in mmc.getLoadedDevices():
-            return mmc
-    raise RuntimeError(
-        f"No running Micro-Manager core with the SLM device '{label}' loaded in "
-        f"this Python process. Start the GUI with `python -m experiments.imaging_gui` "
-        f"and run this script from its 'SLM phase mask' panel or napari's console "
-        f"(%run experiments/<script>.py). A separate `python` process can't reach "
-        f"the GUI's hardware, and its mask would vanish as soon as it exited."
-    )
-
-
-def show_imaging_mask(mmc, slm, mask):
-    """Display `mask`, refusing while an acquisition is running."""
-    if mmc.mda.is_running():
-        raise RuntimeError("An acquisition is running - not changing the SLM mask mid-run.")
-    slm.show_mask(mask)

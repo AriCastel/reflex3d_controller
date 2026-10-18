@@ -32,15 +32,13 @@ functions/                       General-purpose hardware control + orchestratio
   laser.py                         (legacy, pycromanager) Laser on/off/power
   mmcore_laser.py                  pymmcore-plus equivalent of laser.py
   camera.py                        (legacy, pycromanager) Exposure + snap
-  mm2_slm.py                       (pycromanager) the Generic SLM device of a running
-                                    Micro-Manager 2.0 instance
   mmcore_micromanipulator.py       Sutter MPC stage in camera axes (config axis map),
                                     backlash-safe one-direction scans
   mmcore_camera.py                 pymmcore-plus per-channel camera ROIs
                                     (camera.channel_rois in the config)
   slm.py                           (legacy) SLM as a secondary-display window
-  mmcore_slm.py                    pymmcore-plus equivalent of SLMDisplay:
-                                    addresses the SLM as a Micro-Manager device
+  mmcore_slm.py                    The SLM as Micro-Manager's Generic SLM device, through
+                                    pymmcore-plus or pycromanager (Micro-Manager 2.0)
   acquisition.py                   Orchestration routines: run_timelapse (legacy)
                                     and build_timelapse_sequence/run_timelapse_mda
                                     (pymmcore-plus MDA)
@@ -65,12 +63,9 @@ experiments/                     Minimal scripts: parameters + function calls on
   store_ao_correction.py           Store an earlier AO run's coefficients in phase_masks.json
   psf_characterization.py          Depth stack of a guide star with a chosen phase mask
   imaging_gui.py                   napari-micromanager GUI + 'SLM phase mask' panel
-  slm_aberration_correction.py     Load a mask into the running GUI: stored correction,
-  slm_edof.py                       primary-spherical EDOF, both, or flat (both
-  slm_aberration_correction_edof.py channels)
-  slm_flat.py
-  mm2_slm_*.py                     The same four mask loaders for a running Micro-Manager
-                                    2.0 instance (pycromanager)
+  load_phase_mask.py               Load a mask preset onto the SLM (stored correction,
+                                    EDOF, both, flat), from the napari GUI or with
+                                    Micro-Manager 2.0
 calibration/                     Infrequent, complex routines
   fourier_alignment.py             Fourier-plane alignment acquisition
   fourier_refinement.py            Helpers for the refinement pass (stored centres)
@@ -86,8 +81,8 @@ tests/
   sim_validate.py                  Centre recovery on a simulated pupil
   ao_sim_test.py                   Aberration correction on a simulated microscope
                                     with a known aberration (python tests/ao_sim_test.py)
-  mm2_slm_test.py                  The Micro-Manager 2.0 mask scripts against a fake
-                                    pycromanager Core (python tests/mm2_slm_test.py)
+  mm2_slm_test.py                  load_phase_mask with Micro-Manager 2.0, against a
+                                    fake pycromanager Core (python tests/mm2_slm_test.py)
   psf_characterization_test.py     PSF depth stack on a simulated microscope whose stage
                                     has backlash (python tests/psf_characterization_test.py)
   imaging_masks_test.py            phase_masks.json store, imaging masks, mask scripts and
@@ -358,20 +353,25 @@ Noll index), and the coefficients are printed.
 Each channel's pupil on the SLM gets a sum of Zernike modes (same
 convention as the AO: Noll order, rad RMS), from the stored aberration
 correction and/or the extended-depth-of-field (EDOF) terms in the
-`imaging_masks` config section (primary spherical, Noll 11). Four
-presets, one script each, applied to both channels
-(`imaging_masks.channels`):
+`imaging_masks` config section (primary spherical, Noll 11).
+`experiments/load_phase_mask.py` loads one of four presets onto both
+channels (`imaging_masks.channels`), given as its argument:
 
-| script | mask |
+| preset | mask |
 | --- | --- |
-| `slm_aberration_correction.py` | stored correction (`imaging_masks.aberration_correction_method`, `spsa`) |
-| `slm_edof.py` | primary spherical only (`imaging_masks.edof_zernike_rad_rms`) |
-| `slm_aberration_correction_edof.py` | both, added term by term (the correction's own Noll 11 plus the EDOF amount) |
-| `slm_flat.py` | completely flat |
+| `aberration_correction` | stored correction (`imaging_masks.aberration_correction_method`, `spsa`) |
+| `edof` | primary spherical only (`imaging_masks.edof_zernike_rad_rms`) |
+| `aberration_correction_edof` | both, added term by term (the correction's own Noll 11 plus the EDOF amount) |
+| `flat` | completely flat |
 
-**From the GUI.** Micro-Manager hardware can only be open in one
+The same script works with the napari GUI and with Micro-Manager 2.0:
+it uses the napari GUI's core if it runs inside the GUI's process, and
+otherwise connects to a running Micro-Manager 2.0 through pycromanager
+(`BACKEND` at the top forces one or the other).
+
+**From the napari GUI.** Micro-Manager hardware can only be open in one
 process, and the SLM only shows a mask while the process that loaded it
-is alive, so the mask scripts run *inside* the GUI's process:
+is alive, so the script runs *inside* the GUI's process:
 
 1. `python -m experiments.imaging_gui` opens napari with
    napari-micromanager on the hardware config in `pymmcore_plus` and a
@@ -379,7 +379,7 @@ is alive, so the mask scripts run *inside* the GUI's process:
 2. Position the sample and set exposure, laser power etc. with the
    napari-micromanager widgets.
 3. Load the mask with a button in the **SLM phase mask** panel, or run
-   the script from napari's console (`%run experiments/slm_edof.py`;
+   the script from napari's console (`%run experiments/load_phase_mask.py edof`;
    with your own napari-micromanager window, give the full path). Each
    load writes a small run folder with the mask (`slm_mask.tif`) and
    what it is made of (`slm_mask_metadata.json`: preset, coefficients
@@ -391,19 +391,19 @@ is alive, so the mask scripts run *inside* the GUI's process:
    stays up until another one is loaded or the GUI is closed.
 
 **From Micro-Manager 2.0.** When the microscope is run from a
-Micro-Manager 2.0 instance instead, use the `mm2_` versions from a
-terminal while Micro-Manager is open:
+Micro-Manager 2.0 instance instead, run it from a terminal while
+Micro-Manager is open:
 
 ```
-python -m experiments.mm2_slm_aberration_correction
-python -m experiments.mm2_slm_edof
-python -m experiments.mm2_slm_aberration_correction_edof
-python -m experiments.mm2_slm_flat
+python -m experiments.load_phase_mask aberration_correction
+python -m experiments.load_phase_mask edof
+python -m experiments.load_phase_mask aberration_correction_edof
+python -m experiments.load_phase_mask flat
 ```
 
-They build exactly the same masks and push them through Micro-Manager's
-Generic SLM device (`slm.device_label`) via pycromanager, so the mask
-stays up after the script exits, until another is loaded. Micro-Manager
+The mask goes through Micro-Manager's Generic SLM device
+(`slm.device_label`) via pycromanager, so it stays up after the script
+exits, until another is loaded. Micro-Manager
 must have the pycro-manager server enabled (Tools > Options > "Run
 pycro-manager server on port 4827") and the Generic SLM device in its
 hardware config, at `slm.resolution`. Each load is recorded in a run

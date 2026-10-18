@@ -11,7 +11,7 @@ napari viewers for the pymmcore-plus stack:
 * `show_verification_frame` shows one snapped frame with the localized
   point source marked.
 * `add_script_panel` docks a panel of buttons that run scripts inside
-  the GUI's process (e.g. the experiments/slm_*.py mask scripts).
+  the GUI's process (e.g. experiments/load_phase_mask.py).
 
 The last two block until the scientist closes the viewer window.
 """

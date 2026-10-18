@@ -1,5 +1,5 @@
 """
-The Micro-Manager 2.0 (pycromanager) mask scripts, experiments/mm2_slm_*.py,
+experiments/load_phase_mask.py with Micro-Manager 2.0 (pycromanager),
 against a fake pycromanager `Core` standing in for a running
 Micro-Manager instance with a Generic SLM device. Each call the scripts
 make goes through pyjavaz's own overload resolution (the Java bridge
@@ -82,55 +82,71 @@ class FakeCore:
 core = FakeCore()
 sys.modules["pycromanager"] = types.SimpleNamespace(Core=lambda: core)
 
-import experiments.mm2_slm_aberration_correction as ao
-import experiments.mm2_slm_aberration_correction_edof as ao_edof
-import experiments.mm2_slm_edof as edof
-import experiments.mm2_slm_flat as flat
+import experiments.load_phase_mask as lpm
 
-scripts = {flat: "flat", edof: "edof", ao: "aberration_correction",
-           ao_edof: "aberration_correction_edof"}
+PRESETS = ["flat", "edof", "aberration_correction", "aberration_correction_edof"]
 
 
-def run(module):
-    with mock.patch.object(module, "load_config", lambda: config):
-        return module.main()
+def run(preset=None, argv=("load_phase_mask.py",)):
+    with mock.patch.object(lpm, "load_config", lambda: config), \
+         mock.patch.object(sys, "argv", list(argv)):
+        return lpm.main(preset)
 
 
 print("missing stored correction")
-for module in (ao, ao_edof):
+for preset in ("aberration_correction", "aberration_correction_edof"):
     core.shown = None
     try:
-        run(module); check(False, f"{module.__name__} raises")
+        run(preset); check(False, f"{preset} raises")
     except ValueError:
-        check(core.shown is None, f"{module.__name__}: raises before touching the SLM")
+        check(core.shown is None, f"{preset}: raises before touching the SLM")
 
 for ch, c in {"left": {"5": 0.4, "7": -0.3}, "right": {"6": -0.5, "11": 0.2}}.items():
     write_phase_mask_coefficients(config.phase_masks_path, "spsa", ch, {"coefficients_rad_rms": c})
 
-print("scripts")
-for module, preset in scripts.items():
-    run(module)
-    name = module.__name__.split(".")[-1]
+print("presets (auto backend: no pymmcore-plus core here -> Micro-Manager 2.0)")
+for preset in PRESETS:
+    # Half given as main()'s argument (the GUI buttons), half on the command line.
+    if preset in ("flat", "aberration_correction"):
+        run(preset)
+    else:
+        run(argv=("load_phase_mask.py", preset))
     expected = build_imaging_mask(config, preset)[0]
     check(core.shown is not None and np.array_equal(core.shown, expected),
-          f"{name}: '{preset}' mask displayed")
-    check(core.overloads[-1] == "byte[]", f"{name}: sent as byte[] (8-bit)")
-    rec = sorted((WORK / "data").glob(f"*/*_{name}_*"))
+          f"{preset}: mask displayed")
+    check(core.overloads[-1] == "byte[]", f"{preset}: sent as byte[] (8-bit)")
+    rec = sorted((WORK / "data").glob(f"*/*_load_phase_mask_{preset}_*"))
     check(rec and json.load(open(rec[-1] / "slm_mask_metadata.json"))["preset"] == preset,
-          f"{name}: recorded in a run folder")
+          f"{preset}: recorded in a run folder")
 check(not np.array_equal(build_imaging_mask(config, "edof")[0].T.ravel(),
                          build_imaging_mask(config, "edof")[0].ravel()),
       "(the row-major check above is meaningful: the mask isn't transpose-symmetric)")
 
 print("refusals")
+for bad_preset in (None, "helix"):
+    try:
+        run(bad_preset); check(False, f"preset {bad_preset!r} refused")
+    except SystemExit as exc:
+        check("Choose a phase mask" in str(exc), f"preset {bad_preset!r} refused")
 for bad, why in [(FakeCore(devices=("Core", "Camera")), "no SLM device"),
                  (FakeCore(size=(W, H + 1)), "resolution mismatch")]:
+    sys.modules["pycromanager"].Core = lambda bad=bad: bad
     try:
-        with mock.patch.object(flat, "Core", lambda bad=bad: bad):
-            run(flat)
-        check(False, f"{why} refused")
+        run("flat"); check(False, f"{why} refused")
     except RuntimeError as exc:
         check(bad.shown is None, f"{why} refused ({str(exc)[:60]}...)")
+
+
+def no_mm():
+    raise ConnectionError("no Micro-Manager on port 4827")
+
+
+sys.modules["pycromanager"].Core = no_mm
+try:
+    run("flat"); check(False, "nothing to connect to refused")
+except RuntimeError as exc:
+    check("couldn't connect to Micro-Manager 2.0" in str(exc) and "napari GUI" in str(exc),
+          "nothing to connect to: clear error naming both ways")
 
 print()
 assert not failures, failures

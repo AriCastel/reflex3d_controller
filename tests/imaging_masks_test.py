@@ -9,8 +9,9 @@ laser). Checks:
   sum in each channel's pupil and flat everywhere else (correction +
   EDOF adds the two term by term);
 * a missing stored correction raises before anything is shown;
-* the experiments/slm_*.py scripts find the running core and put their
-  mask on the SLM, and refuse with a clear error when there is none;
+* experiments/load_phase_mask.py finds the core running in this process
+  (the napari GUI's) and puts each preset's mask on the SLM, and refuses
+  with a clear error when there is no core to be found;
 * example_timelapse_mda shows the requested mask for the acquisition
   and saves it into the run folder (needs a display: run under xvfb).
 
@@ -208,22 +209,19 @@ class SimCamera(SimpleCameraDevice):
         return {}
 
 
-import experiments.slm_aberration_correction as slm_ao
-import experiments.slm_aberration_correction_edof as slm_ao_edof
-import experiments.slm_edof as slm_edof
-import experiments.slm_flat as slm_flat
+import experiments.load_phase_mask as lpm
 
-scripts = {slm_ao: "aberration_correction", slm_ao_edof: "aberration_correction_edof",
-           slm_edof: "edof", slm_flat: "flat"}
-
-for module in scripts:
-    with mock.patch.object(module, "load_config", lambda: config):
-        try:
-            module.main()
-            check(False, f"{module.__name__}: refuses without a running core")
-        except RuntimeError as exc:
-            check("No running Micro-Manager core" in str(exc),
-                  f"{module.__name__}: refuses without a running core")
+# No Micro-Manager 2.0 either: block pycromanager (only that key - patch.dict on
+# sys.modules would also drop every module imported meanwhile, e.g. Qt's).
+_saved_pycromanager = sys.modules.get("pycromanager")
+sys.modules["pycromanager"] = None
+with mock.patch.object(lpm, "load_config", lambda: config):
+    try:
+        lpm.main("flat")
+        check(False, "load_phase_mask: refuses without a core")
+    except RuntimeError as exc:
+        check("No Micro-Manager core with the SLM found" in str(exc),
+              "load_phase_mask: refuses without a core")
 
 # The "GUI": a core in this process with the SLM loaded (UniMMCore()
 # becomes CMMCorePlus.instance(), as load_mmcore's core would).
@@ -233,16 +231,21 @@ mmc.loadPyDevice("Cam", SimCamera(laser)); mmc.loadPyDevice("SLM", slm_dev)
 mmc.loadPyDevice("L", laser)
 mmc.initializeAllDevices(); mmc.setCameraDevice("Cam"); mmc.setSLMDevice("SLM")
 
-for module, preset in scripts.items():
-    with mock.patch.object(module, "load_config", lambda: config):
-        info = module.main()
+for preset in PRESETS:
+    with mock.patch.object(lpm, "load_config", lambda: config):  # pycromanager still blocked
+        lpm.main(preset)
     check(np.array_equal(slm_dev.shown, masks[preset]),
-          f"{module.__name__}: '{preset}' mask on the SLM")
-    folders = sorted((WORK / "data").glob(f"*/*_{module.__name__.split('.')[-1]}_*"))
+          f"load_phase_mask '{preset}': mask on the SLM")
+    folders = sorted((WORK / "data").glob(f"*/*_load_phase_mask_{preset}_*"))
     rec = folders[-1] if folders else None
     check(rec is not None and (rec / "slm_mask.tif").exists()
           and json.load(open(rec / "slm_mask_metadata.json"))["preset"] == preset,
-          f"{module.__name__}: mask recorded in {rec.name if rec else '(none)'}")
+          f"load_phase_mask '{preset}': recorded in {rec.name if rec else '(none)'}")
+
+if _saved_pycromanager is None:
+    del sys.modules["pycromanager"]
+else:
+    sys.modules["pycromanager"] = _saved_pycromanager
 
 # ------------------------------------------------------------------ timelapse
 print("example_timelapse_mda with a phase mask")
