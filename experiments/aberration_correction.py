@@ -22,7 +22,7 @@ Flow
    the coefficients printed.
 5. Once the figure is closed, choose whether to store the coefficients
    in config/phase_masks.json (method 'spsa', this channel), where the
-   imaging mask scripts (experiments/slm_*.py) and the timelapse read
+   mask loader (experiments/load_phase_mask.py) and the timelapse read
    them. A run not stored now can be stored later with
    experiments/store_ao_correction.py.
 

@@ -27,6 +27,12 @@ def load_mmcore(config):
         mmc.setDeviceAdapterSearchPaths([device_adapter_path])
     if system_config_path:
         mmc.loadSystemConfiguration(system_config_path)
+    # Micro-Manager's own RAM buffer that a camera sequence fills before the
+    # frames are collected (the GUI's Tools > Options > "Sequence buffer size").
+    # Larger = more slack for very fast acquisitions; None keeps the default.
+    buffer_mb = config.get("pymmcore_plus", "sequence_buffer_mb")
+    if buffer_mb:
+        mmc.setCircularBufferMemoryFootprint(int(buffer_mb))
 
     device_labels = mmc.getLoadedDevices()
 
