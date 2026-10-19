@@ -123,13 +123,16 @@
     "timelapse": {
       "num_frames": 50,
       "interval_s": 0.0,
-      "exposure_ms": 50
+      "exposure_ms": 50,
+      "buffer": "ram",
+      "_comment": "Defaults for experiments/timelapse.py (and the napari GUI's Timelapse panel), a continuous timelapse: num_frames and exposure_ms; the laser power defaults to laser.default_power_mW, and interval_s isn't used (there's no wait between frames). buffer = \"ram\" keeps every frame in RAM during the run and writes the TIFF when it ends, as Micro-Manager does for fast acquisitions (a run that doesn't fit in free RAM is refused before it starts); \"disk\" streams frames to a memory-mapped file instead, for runs too long for RAM, at the risk of disk writes slowing a fast acquisition. Frames always have the camera's current ROI, so crop the sensor (napari-micromanager's Camera ROI tool) to go faster."
     }
   },
   "pymmcore_plus": {
     "device_adapter_path": "C:/Program Files/Micro-Manager-2.0",
     "system_config_path": "C:/Program Files/Micro-Manager-2.0/2026_10_08_SPIM2by2.cfg",
-    "_comment": "New pymmcore-plus / napari-micromanager stack, used by core/mmcore.py and the *_mda experiments - the pycromanager code elsewhere in this config and codebase is unaffected and kept as legacy. device_adapter_path is the folder containing the MM device adapter DLLs/.so files (passed to CMMCorePlus.setDeviceAdapterSearchPaths); system_config_path is the .cfg hardware configuration file (passed to CMMCorePlus.loadSystemConfiguration). Point both at your real Micro-Manager installation and hardware config before running the pymmcore-plus experiments."
+    "sequence_buffer_mb": null,
+    "_comment": "New pymmcore-plus / napari-micromanager stack, used by core/mmcore.py and the *_mda experiments - the pycromanager code elsewhere in this config and codebase is unaffected and kept as legacy. device_adapter_path is the folder containing the MM device adapter DLLs/.so files (passed to CMMCorePlus.setDeviceAdapterSearchPaths); system_config_path is the .cfg hardware configuration file (passed to CMMCorePlus.loadSystemConfiguration). Point both at your real Micro-Manager installation and hardware config before running the pymmcore-plus experiments. sequence_buffer_mb is the size in MB of Micro-Manager's circular buffer that a camera sequence (e.g. experiments/timelapse.py) fills in RAM before pymmcore-plus collects the frames - the Micro-Manager GUI's Tools > Options > 'Sequence buffer size', which lives in the GUI's own preferences rather than the .cfg; null keeps the core default (250 MB, ~30 full 2048x2048 frames). Raise it to match your Micro-Manager setting if very fast runs report a buffer overflow."
   },
   "adaptive_optics": {
     "noll_indices": [

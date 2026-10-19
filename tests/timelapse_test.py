@@ -87,7 +87,10 @@ class SimLaser(GenericDevice):
 
 
 class SimCamera(SimpleCameraDevice):
-    """Pixel value = frame number since the last reset; logs laser state and mask."""
+    """Pixel value = (frame number % 16) * 4096 + its position on the sensor
+    (row * CAM_W + col), so both frame order and the crop can be checked.
+    Logs laser state, power, the SLM mask, and whether the run's TIFF already
+    exists on disk while frames are still coming in."""
     def __init__(self, laser, slm):
         super().__init__(); self.laser, self.slm, self._exposure = laser, slm, 5.0
         self.n, self.log = 0, []
@@ -95,13 +98,19 @@ class SimCamera(SimpleCameraDevice):
     def dtype(self): return np.uint16
     def get_exposure(self): return self._exposure
     def set_exposure(self, exposure): self._exposure = exposure
-    def snap(self, buffer):
+    def snap(self, buffer):   # buffer = full sensor; the core crops it to the ROI
         self.n += 1
-        buffer[:] = self.n
+        buffer[:] = (self.n % 16) * 4096 + POSITION
+        on_disk = bool(CURRENT_RUN and any((WORK / "data").glob(f"*/*_{CURRENT_RUN}_*/{CURRENT_RUN}.tif")))
         self.log.append((self.laser.get_property_value("S"), self.laser.get_property_value("P"),
-                         self.slm.shown))
+                         self.slm.shown, on_disk))
         time.sleep(self._exposure / 1000.0)
         return {}
+
+
+POSITION = np.arange(CAM_H * CAM_W, dtype=np.uint16).reshape(CAM_H, CAM_W)
+CURRENT_RUN = None   # name of the run in progress, for the "TIFF on disk yet?" log
+FULL = (0, 0, CAM_W, CAM_H)
 
 
 def make_core():
@@ -122,8 +131,9 @@ make_core()   # headless parts: no Qt app yet, as in a real headless run
 import experiments.timelapse as tl
 
 
-def reset():
-    cam.n, cam.log = 0, []
+def reset(run_name=None):
+    global CURRENT_RUN
+    cam.n, cam.log, CURRENT_RUN = 0, [], run_name
 
 
 def run_folder(name):
@@ -131,15 +141,24 @@ def run_folder(name):
     return found[-1] if found else None
 
 
-def check_run(folder, name, n_expected, n_requested, exposure, power, preset, label):
+def check_run(folder, name, n_expected, n_requested, exposure, power, preset, label,
+              roi=FULL, buffer="ram"):
     stack = tifffile.imread(folder / f"{name}.tif")
     meta = json.load(open(folder / f"{name}_metadata.json"))
     with tifffile.TiffFile(folder / f"{name}.tif") as f:
         axes = f.series[0].axes
-    check(stack.shape == (n_expected, CAM_H, CAM_W) and axes == "TYX",
-          f"{label}: {stack.shape} {axes} stack")
-    check(np.array_equal(stack[:, 0, 0], np.arange(1, n_expected + 1)),
+    x, y, w, h = roi
+    check(stack.shape == (n_expected, h, w) and axes == "TYX",
+          f"{label}: {stack.shape} {axes} stack (ROI {w}x{h})")
+    check(np.array_equal(stack[:, 0, 0] // 4096, np.arange(1, n_expected + 1) % 16),
           f"{label}: every frame, in order")
+    check(np.array_equal(stack[0] % 4096, POSITION[y:y + h, x:x + w])
+          and meta["camera_roi_xywh"] == list(roi),
+          f"{label}: frames are the camera ROI {list(roi)} (position on the sensor checked)")
+    on_disk = [entry[3] for entry in cam.log[:n_expected]]
+    check(meta["buffer"] == buffer and (not any(on_disk) if buffer == "ram" else all(on_disk)),
+          f"{label}: buffer '{buffer}' - TIFF on disk during the run: "
+          f"{'never' if not any(on_disk) else 'yes'}")
     check(meta["frames_requested"] == n_requested and meta["frames_acquired"] == n_expected
           and meta["completed"] == (n_expected == n_requested)
           and meta["exposure_ms"] == exposure and meta["laser_power_mW"] == power
@@ -148,8 +167,8 @@ def check_run(folder, name, n_expected, n_requested, exposure, power, preset, la
     check(meta["phase_mask"]["preset"] == preset
           and (preset is None or (folder / "slm_mask.tif").exists()),
           f"{label}: phase mask '{preset}' recorded")
-    lit = [entry for entry in cam.log]
-    check(all(s == "open" and p == power for s, p, _ in lit[:n_expected]),
+    lit = list(cam.log)
+    check(all(e[0] == "open" and e[1] == power for e in lit[:n_expected]),
           f"{label}: laser on at {power} mW for every frame")
     check(laser.get_property_value("S") == "closed", f"{label}: laser off afterwards")
     return meta, lit
@@ -157,7 +176,7 @@ def check_run(folder, name, n_expected, n_requested, exposure, power, preset, la
 
 # ------------------------------------------------------------------ headless
 print("headless, no preview")
-reset()
+reset("beads_test_1")
 with mock.patch.object(tl, "load_config", lambda: config), \
      mock.patch.object(tl, "load_mmcore", lambda c: mmc), \
      mock.patch.object(tl, "PREVIEW", False), mock.patch.object(tl, "PHASE_MASK", "edof"), \
@@ -168,10 +187,19 @@ check(folder is not None and folder.name.endswith("_beads_test_1_1")
       and folder.parent.name == folder.name[:8], f"run folder YYYYMMDD/YYYYMMDD_<name>_N ({folder})")
 meta, lit = check_run(folder, "beads_test_1", 30, 30, 5.0, 20.0, "edof", "headless")
 edof = build_imaging_mask(config, "edof")[0]
-check(all(np.array_equal(m, edof) for _, _, m in lit), "headless: EDOF mask on the SLM throughout")
+check(all(np.array_equal(e[2], edof) for e in lit), "headless: EDOF mask on the SLM throughout")
 rate = meta["measured_sampling_rate_hz"]
 check(rate is not None and 100 < rate <= 210,
       f"headless: continuous, measured {rate:.1f} Hz (<= {meta['max_sampling_rate_hz']:.0f} Hz)")
+
+print("headless, streamed to disk (BUFFER = 'disk')")
+reset("disk_run")
+with mock.patch.object(tl, "load_config", lambda: config), \
+     mock.patch.object(tl, "load_mmcore", lambda c: mmc), \
+     mock.patch.object(tl, "PREVIEW", False), mock.patch.object(tl, "PHASE_MASK", "flat"), \
+     mock.patch.object(tl, "BUFFER", "disk"):
+    tl.main("disk_run")
+check_run(run_folder("disk_run"), "disk_run", 30, 30, 5.0, 20.0, "flat", "disk", buffer="disk")
 
 print("headless refusals")
 n_folders = len(list((WORK / "data").glob("*/*")))
@@ -194,6 +222,15 @@ except ValueError:
     check(True, "missing stored correction refused before touching hardware")
 shutil.move(WORK / "moved.json", config.phase_masks_path)
 check(len(list((WORK / "data").glob("*/*"))) == n_folders, "...and no run folder created")
+try:
+    with mock.patch.object(tl, "load_config", lambda: config), \
+         mock.patch.object(tl, "load_mmcore", lambda c: mmc), \
+         mock.patch.object(tl, "PHASE_MASK", "flat"):
+        tl.main("too_big", num_frames=10**9)
+    check(False, "run too big for RAM refused")
+except MemoryError as exc:
+    check("GB of RAM" in str(exc), f"run too big for RAM refused ({str(exc)[:70]}...)")
+check(len(list((WORK / "data").glob("*/*"))) == n_folders, "...before creating a run folder")
 
 print("headless with preview, closed early")
 import napari
@@ -215,7 +252,7 @@ def close_after_some_frames():
     viewer.close()
 
 
-reset()
+reset("early_stop")
 shown_layers = []
 with mock.patch.object(tl, "load_config", lambda: config), \
      mock.patch.object(tl, "load_mmcore", lambda c: mmc), \
@@ -231,7 +268,11 @@ check_run(folder, "early_stop", n, 2000, 5.0, 20.0, "flat", "early stop")
 
 # ------------------------------------------------------------------ GUI
 print("napari GUI 'Timelapse' panel")
+from napari_micromanager._gui_objects._toolbar import DOCK_WIDGETS as TOOLBAR
+from pymmcore_widgets.control._camera_roi_widget import CUSTOM_ROI, CameraRoiWidget
 from qtpy.QtWidgets import QDoubleSpinBox, QLabel, QLineEdit, QPushButton, QSpinBox
+
+GUI_ROI = (16, 8, 32, 24)   # x, y, w, h - off-centre, so a wrong offset would show
 
 import experiments.imaging_gui as gui
 import experiments.load_phase_mask as lpm
@@ -264,12 +305,22 @@ def drive_gui():
     buttons["Start timelapse"].click(); pump(0.2)
     results["no_name"] = label_text("name")
 
+    # Crop the sensor with the Camera ROI widget napari-micromanager docks
+    # under its crop icon, as the scientist would.
+    roi_widget = CameraRoiWidget(mmcore=mmc)
+    roi_widget.camera_roi_combo.setCurrentText(CUSTOM_ROI)
+    roi_widget.roi_width.setValue(GUI_ROI[2]); roi_widget.roi_height.setValue(GUI_ROI[3])
+    roi_widget.start_x.setValue(GUI_ROI[0]); roi_widget.start_y.setValue(GUI_ROI[1])
+    roi_widget.crop_btn.click()
+    pump(0.2)
+    results["roi_after_crop"] = tuple(mmc.getROI())
+
     # Load the correction from the mask panel, then a full run.
     masks = viewer.window._dock_widgets["SLM phase mask"].widget()
     next(b for b in masks.findChildren(QPushButton) if b.text() == "Aberration correction").click()
     pump(0.2)
     name.setText("gui run"); power.setValue(35.0); frames.setValue(25)
-    reset()
+    reset("gui_run")
     buttons["Start timelapse"].click()
     results["inputs_locked"] = not name.isEnabled() and buttons["Stop"].isEnabled()
     pump(20, until=lambda: "Done" in label_text("saved"))
@@ -279,7 +330,7 @@ def drive_gui():
 
     # A long run, stopped.
     name.setText("gui stop"); frames.setValue(5000)
-    reset()
+    reset("gui_stop")
     buttons["Start timelapse"].click()
     pump(10, until=lambda: cam.n >= 30)
     buttons["Stop"].click()
@@ -297,6 +348,9 @@ with mock.patch.object(gui, "load_config", lambda: config), \
      mock.patch.object(tl, "load_mmcore", lambda c: (_ for _ in ()).throw(AssertionError)):
     gui.main()
 
+check(TOOLBAR["Camera ROI"][0] is CameraRoiWidget,
+      "napari-micromanager's 'Camera ROI' (crop) tool is the CameraRoiWidget used here")
+check(results["roi_after_crop"] == GUI_ROI, f"crop applied to the core: {results['roi_after_crop']}")
 check(results["signals"] == "QCoreSignaler", f"GUI core has Qt signals ({results['signals']})")
 check(results["defaults"] == (5.0, 20.0, 30), f"panel defaults from the config {results['defaults']}")
 check("250.00 Hz" in results["rate_label"], f"sampling rate shown: {results['rate_label']!r}")
@@ -306,9 +360,9 @@ check("Done: 25/25 frames saved" in results["done"] and "Hz" in results["done"],
       f"panel reports: {results['done']!r}")
 cam.log = results["log_full"]
 folder = run_folder("gui_run")
-check_run(folder, "gui_run", 25, 25, 5.0, 35.0, "aberration_correction", "GUI")
+check_run(folder, "gui_run", 25, 25, 5.0, 35.0, "aberration_correction", "GUI", roi=GUI_ROI)
 ao = build_imaging_mask(config, "aberration_correction")[0]
-check(all(np.array_equal(m, ao) for _, _, m in results["log_full"][:25]),
+check(all(np.array_equal(e[2], ao) for e in results["log_full"][:25]),
       "GUI: run with the mask loaded from the 'SLM phase mask' panel")
 check(results["stopped"].startswith("Stopped:"), f"Stop: {results['stopped']!r}")
 meta = json.load(open(run_folder("gui_stop") / "gui_stop_metadata.json"))

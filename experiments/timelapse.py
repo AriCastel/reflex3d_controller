@@ -3,9 +3,8 @@ experiments/timelapse.py
 
 Continuous timelapse at the current position: a given number of frames
 with no wait between them, at a given exposure (ms) and laser power (mW),
-saved as <name>.tif (ImageJ TYX stack, streamed to disk as it's acquired)
-in a run folder <root_folder>/YYYYMMDD/YYYYMMDD_<name>_N/, together with
-<name>_metadata.json (settings, frames acquired, measured sampling rate,
+saved as <name>.tif (ImageJ TYX stack) in a run folder
+<root_folder>/YYYYMMDD/YYYYMMDD_<name>_N/, together with <name>_metadata.json (settings, frames acquired, measured sampling rate,
 per-frame camera timestamps, camera ROI, phase mask) and the phase mask
 itself (slm_mask.tif + slm_mask_metadata.json).
 
@@ -13,6 +12,14 @@ Only a time loop goes to the MDA engine - no XYZ positions, channel
 groups or pixel-size calibration - so the stage, which on this setup
 must only be moved through its 'Current X/Y/Z' properties, is never
 touched.
+
+Frames have the camera's current ROI, so crop the sensor first (e.g.
+napari-micromanager's Camera ROI tool) for higher frame rates. They're
+kept in RAM during the run and the TIFF is written once it's over (as
+Micro-Manager does for fast acquisitions), so disk writes can't slow the
+camera down; a run that wouldn't fit in free RAM is refused before it
+starts. BUFFER = "disk" (or acquisition_defaults.timelapse.buffer)
+streams frames to a file on disk instead, for runs too long for RAM.
 
 Two ways to run it:
 
@@ -34,7 +41,7 @@ import time
 import numpy as np
 
 from core.config import load_config
-from core.file_io import TimelapseTiffStream, save_phase_mask
+from core.file_io import TimelapseRamBuffer, TimelapseTiffStream, save_phase_mask
 from core.logging_setup import setup_logger
 from core.mmcore import load_mmcore
 from core.session import Session
@@ -56,6 +63,8 @@ LASER_POWER_MW = None  # None -> laser.default_power_mW
 PHASE_MASK = "flat"    # "flat", "aberration_correction", "edof", "aberration_correction_edof",
                        # or None to leave the SLM as it is
 PREVIEW = True         # napari window with the latest frame
+# Both:
+BUFFER = None          # "ram" or "disk"; None -> acquisition_defaults.timelapse.buffer ("ram")
 
 
 def safe_name(name):
@@ -86,16 +95,30 @@ def main(name=None, num_frames=None, exposure_ms=None, laser_power_mW=None,
         laser_power_mW = config.get("laser", "default_power_mW", default=0.0)
     headless = mmc is None
 
+    buffer = (BUFFER or defaults.get("buffer", "ram")).lower()
+    if buffer not in ("ram", "disk"):
+        raise ValueError(f"buffer must be 'ram' or 'disk', got {buffer!r}")
+
     mask = info = None
     if headless and PHASE_MASK:
         mask, info = build_imaging_mask(config, PHASE_MASK)  # fails before touching hardware
+    if headless:
+        mmc = load_mmcore(config)
+
+    # Frames have the camera's CURRENT ROI - whatever was cropped in the GUI
+    # (napari-micromanager's Camera ROI tool sets it on this same core); it's
+    # never changed here.
+    roi = list(mmc.getROI())
+    frame_shape = (mmc.getImageHeight(), mmc.getImageWidth())
+    dtype = {1: np.uint8, 2: np.uint16, 4: np.uint32}.get(mmc.getBytesPerPixel(), np.uint16)
+    if buffer == "ram":
+        TimelapseRamBuffer.check_fits(num_frames, frame_shape, dtype)  # before any folder
 
     session = Session(config, script_name=name)
     logger = setup_logger(session.path)
     logger.info(f"Run folder: {session.path}")
 
     if headless:
-        mmc = load_mmcore(config)
         logger.info("Connected to Micro-Manager via pymmcore-plus.")
         if mask is not None:
             with MMCoreSLM(mmc, config) as slm:
@@ -111,10 +134,12 @@ def main(name=None, num_frames=None, exposure_ms=None, laser_power_mW=None,
         save_phase_mask(session.path, mask, info)
     logger.info(describe_imaging_mask(info) if info.get("channels") else info["note"])
 
-    dtype = {1: np.uint8, 2: np.uint16, 4: np.uint32}.get(mmc.getBytesPerPixel(), np.uint16)
-    stream = TimelapseTiffStream(session.path, f"{name}.tif", num_frames,
-                                 (mmc.getImageHeight(), mmc.getImageWidth()), dtype,
-                                 frame_interval_s=exposure_ms / 1000.0)
+    writer = TimelapseRamBuffer if buffer == "ram" else TimelapseTiffStream
+    stream = writer(session.path, f"{name}.tif", num_frames, frame_shape, dtype,
+                    frame_interval_s=exposure_ms / 1000.0)
+    logger.info(f"Camera ROI (x, y, w, h) = {roi}; frames buffered in "
+                + ("RAM, written to disk when the run ends" if buffer == "ram"
+                   else "a file on disk as they arrive"))
     metadata = {
         "name": name,
         "num_frames": num_frames,
@@ -122,7 +147,9 @@ def main(name=None, num_frames=None, exposure_ms=None, laser_power_mW=None,
         "laser_power_mW": laser_power_mW,
         "interval_s": 0.0,
         "max_sampling_rate_hz": sampling_rate_hz(exposure_ms),
-        "camera_roi_xywh": list(mmc.getROI()),
+        "camera_roi_xywh": roi,
+        "buffer": buffer,
+        "core_sequence_buffer_mb": mmc.getCircularBufferMemoryFootprint(),
         "phase_mask": info,
         "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
     }

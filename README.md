@@ -476,11 +476,32 @@ X/Y/Z' properties, is never touched; the engine runs the frames as one
 hardware-sequenced camera acquisition.
 
 The run folder is `<root_folder>/YYYYMMDD/YYYYMMDD_<name>_N/` and holds
-`<name>.tif` (ImageJ TYX stack, streamed to disk frame by frame, so long
-runs don't need to fit in memory), `<name>_metadata.json` (settings,
+`<name>.tif` (ImageJ TYX stack), `<name>_metadata.json` (settings,
 frames acquired, measured sampling rate, per-frame camera timestamps,
 camera ROI, the phase mask) and the mask (`slm_mask.tif` +
 `slm_mask_metadata.json`). The laser is on only for the run.
+
+**Speed: crop the sensor, frames stay in RAM.**
+
+* Frames have the camera's **current ROI** - whatever was set with
+  napari-micromanager's **Camera ROI** tool (crop icon), which sets it on
+  the same core the timelapse uses; the timelapse never changes it. A
+  smaller ROI means less data over USB per frame and a higher rate. The
+  ROI is saved in the metadata (`camera_roi_xywh`).
+* Like Micro-Manager's fast acquisitions, frames are kept **in RAM** for
+  the whole run and the TIFF is written only when it ends (Stop
+  included), so disk writes can't slow the camera down. The buffer is
+  allocated before the run, and a run that wouldn't fit in 80% of the free
+  RAM is refused up front with the numbers (take fewer frames, crop the
+  ROI, or stream to disk). `acquisition_defaults.timelapse.buffer =
+  "disk"` (or `BUFFER = "disk"` in the script) streams frames to a
+  memory-mapped file instead, for runs too long for RAM.
+* During the sequence, frames first land in Micro-Manager's own circular
+  buffer in RAM, from which pymmcore-plus collects them; its size is
+  saved as `core_sequence_buffer_mb`. It defaults to 250 MB (~30 full
+  frames); `pymmcore_plus.sequence_buffer_mb` sets it, like Micro-Manager's
+  Tools > Options > "Sequence buffer size" (which the napari controller
+  doesn't read, since it's stored in Micro-Manager's own preferences).
 
 **From the napari GUI** (`python -m experiments.imaging_gui`): the
 **Timelapse** panel asks only for the name, exposure (ms), laser power
