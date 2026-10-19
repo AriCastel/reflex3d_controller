@@ -38,7 +38,12 @@ from core.config import load_config
 from core.file_io import save_phase_mask
 from core.logging_setup import setup_logger
 from core.session import Session
-from functions.imaging_masks import PRESETS, build_imaging_mask, describe_imaging_mask
+from functions.imaging_masks import (
+    PRESETS,
+    build_imaging_mask,
+    describe_imaging_mask,
+    remember_shown_mask,
+)
 from functions.mmcore_slm import MMCoreSLM, find_slm_core
 
 # ---- parameters ----
@@ -61,6 +66,7 @@ def main(preset=None):
         if slm.acquisition_running():
             raise RuntimeError("An acquisition is running - not changing the SLM mask mid-run.")
         slm.show_mask(mask)
+    remember_shown_mask(mask, info)
 
     session = Session(config, script_name=f"load_phase_mask_{preset}")
     logger = setup_logger(session.path)

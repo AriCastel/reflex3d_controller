@@ -40,23 +40,22 @@ functions/                       General-purpose hardware control + orchestratio
   mmcore_slm.py                    The SLM as Micro-Manager's Generic SLM device, through
                                     pymmcore-plus or pycromanager (Micro-Manager 2.0)
   acquisition.py                   Orchestration routines: run_timelapse (legacy)
-                                    and build_timelapse_sequence/run_timelapse_mda
-                                    (pymmcore-plus MDA)
-  napari_preview.py                napari viewers: live MDA preview, live
-                                    full-frame preview with channel ROI boxes,
-                                    verification frame
+                                    and start_continuous_timelapse (pymmcore-plus MDA)
+  napari_preview.py                napari viewers and panels: live full-frame preview
+                                    with channel ROI boxes, verification frame,
+                                    latest-frame preview, script buttons, timelapse form
 functions/zernike.py             Zernike polynomials (incl. Noll-indexed, RMS-normalized)
 functions/psf_metrics.py         Guide-star PSF metrics for AO (pluggable registry)
 functions/adaptive_optics.py     Pupil Zernike masks, guide-star camera, SPSA optimizer,
                                   results figure
 functions/imaging_masks.py       Imaging phase masks per channel (stored correction,
-                                  EDOF, both, flat), running-GUI core lookup
+                                  EDOF, both, flat), the mask currently shown
 functions/phase_masks.py         Flat masks, Zernike probe patches, raster positions
 functions/localization.py        Point-source centroid localization
 experiments/                     Minimal scripts: parameters + function calls only
   example_timelapse.py             (legacy, pycromanager) flat-mask timelapse -> TIFF
-  example_timelapse_mda.py         Same timelapse via pymmcore-plus's MDA engine,
-                                    with a live napari preview
+  timelapse.py                     Continuous named timelapse (pymmcore-plus MDA), from
+                                    the napari GUI's 'Timelapse' panel or headless
   fourier_plane_alignment.py       Locates the pupil centre on the SLM (pymmcore-plus)
   fourier_plane_refinement.py      Refines that centre with a fine raster around it
   aberration_correction.py         Sensorless AO on a guide star (pymmcore-plus)
@@ -85,9 +84,11 @@ tests/
                                     fake pycromanager Core (python tests/mm2_slm_test.py)
   psf_characterization_test.py     PSF depth stack on a simulated microscope whose stage
                                     has backlash (python tests/psf_characterization_test.py)
-  imaging_masks_test.py            phase_masks.json store, imaging masks, mask scripts and
-                                    the timelapse's PHASE_MASK on a simulated microscope
-                                    (xvfb-run -a python tests/imaging_masks_test.py)
+  imaging_masks_test.py            phase_masks.json store, imaging masks and the mask
+                                    loader on a simulated microscope
+                                    (python tests/imaging_masks_test.py)
+  timelapse_test.py                The continuous timelapse, headless and from the GUI
+                                    panel (xvfb-run -a python tests/timelapse_test.py)
 ```
 
 ## Legacy vs. pymmcore-plus
@@ -98,13 +99,13 @@ tests/
 `Core`, which proxies a running Micro-Manager GUI instance. They're
 unchanged by this migration and stay as the "legacy" path.
 
-`experiments/example_timelapse_mda.py` and its equivalents
+`experiments/timelapse.py` and its equivalents
 (`core/mmcore.py`, `functions/mmcore_laser.py`, `functions/mmcore_slm.py`,
-`functions/acquisition.py`'s `build_timelapse_sequence`/`run_timelapse_mda`,
+`functions/acquisition.py`'s `start_continuous_timelapse`,
 `functions/napari_preview.py`) instead build a `CMMCorePlus` instance
 directly (no separate Micro-Manager GUI process needed), run the
-acquisition through pymmcore-plus's MDA engine, and stream frames live
-into a napari viewer. New experiments should generally use this path.
+acquisition through pymmcore-plus's MDA engine, and stream frames to
+disk and into a napari viewer. New experiments should generally use this path.
 `functions/slm.py`'s `SLMDisplay` (a plain secondary-display window) is
 legacy-only: the pymmcore-plus path uses `functions/mmcore_slm.py`'s
 `MMCoreSLM` instead, which addresses the SLM as a Micro-Manager device
@@ -175,21 +176,21 @@ constants at the top of the script to change this), and writes
 `timelapse.tif` (TZCYX ImageJ hyperstack) plus a metadata JSON
 sidecar into a new run folder under `acquisition_defaults.root_folder`.
 
-**pymmcore-plus, with a live napari preview:** no separate
-Micro-Manager GUI process needed — `core/mmcore.py` builds the core
-directly from `pymmcore_plus.device_adapter_path`/`system_config_path`,
-with the Generic SLM device (`slm.device_label`) loaded as part of
-that system config:
+**pymmcore-plus:** no separate Micro-Manager GUI process needed —
+`core/mmcore.py` builds the core directly from
+`pymmcore_plus.device_adapter_path`/`system_config_path`, with the
+Generic SLM device (`slm.device_label`) loaded as part of that system
+config. For interactive work, `python -m experiments.imaging_gui`
+(below); for a scripted, headless timelapse:
 
 ```
 pip install -r requirements.txt
-python -m experiments.example_timelapse_mda
+python -m experiments.timelapse my_sample
 ```
 
-This runs the same flat-mask, 50-frame timelapse, but through
-pymmcore-plus's MDA engine (`mmc.run_mda`) instead of a manual snap
-loop, and opens a napari viewer that fills in live as each frame is
-acquired. Close the viewer window to end the run.
+This runs a continuous timelapse (see "Continuous timelapse" below)
+named `my_sample`, with the settings at the top of
+`experiments/timelapse.py`.
 
 ## Adding a new experiment
 
@@ -387,8 +388,9 @@ is alive, so the script runs *inside* the GUI's process:
    mask that was on the SLM. A missing stored correction is reported
    and the SLM is left as it was; masks aren't changed while an
    acquisition is running.
-4. Start the timelapse from napari-micromanager's MDA widget. The mask
-   stays up until another one is loaded or the GUI is closed.
+4. Start the timelapse from the **Timelapse** panel (see "Continuous
+   timelapse" below). The mask stays up until another one is loaded or
+   the GUI is closed.
 
 **From Micro-Manager 2.0.** When the microscope is run from a
 Micro-Manager 2.0 instance instead, run it from a terminal while
@@ -409,11 +411,11 @@ pycro-manager server on port 4827") and the Generic SLM device in its
 hardware config, at `slm.resolution`. Each load is recorded in a run
 folder as above.
 
-**Headless timelapse.** `experiments/example_timelapse_mda.py` takes
-`PHASE_MASK` (one of the four presets, default `"flat"`) and
-`PHASE_MASK_CHANNELS` at the top. The mask is built before any hardware
-is touched (so a missing correction stops the run before it starts),
-shown for the whole acquisition, and saved into the run folder.
+**Headless timelapse.** `experiments/timelapse.py` takes `PHASE_MASK`
+(one of the four presets, default `"flat"`) at the top. The mask is
+built before any hardware is touched (so a missing correction stops the
+run before it starts), shown for the whole acquisition, and saved into
+the run folder.
 
 The EDOF amplitude (`edof_zernike_rad_rms`, default 2.0 rad RMS on
 Noll 11, ~1 wave peak-to-valley) is a starting point to tune on the
@@ -461,4 +463,41 @@ takes care of:
   approached from above in the same way.
 * If anything fails mid-scan, the laser is switched off, the stage goes
   back to its starting depth and the camera ROI is cleared.
+
+
+## Continuous timelapse
+
+`experiments/timelapse.py` records a continuous timelapse at the current
+position: a number of frames with no wait between them, at a given
+exposure and laser power. Only a time loop goes to pymmcore-plus's MDA
+engine (no XYZ positions, channel groups or pixel-size calibration), so
+the stage, which on this setup must only be moved through its 'Current
+X/Y/Z' properties, is never touched; the engine runs the frames as one
+hardware-sequenced camera acquisition.
+
+The run folder is `<root_folder>/YYYYMMDD/YYYYMMDD_<name>_N/` and holds
+`<name>.tif` (ImageJ TYX stack, streamed to disk frame by frame, so long
+runs don't need to fit in memory), `<name>_metadata.json` (settings,
+frames acquired, measured sampling rate, per-frame camera timestamps,
+camera ROI, the phase mask) and the mask (`slm_mask.tif` +
+`slm_mask_metadata.json`). The laser is on only for the run.
+
+**From the napari GUI** (`python -m experiments.imaging_gui`): the
+**Timelapse** panel asks only for the name, exposure (ms), laser power
+(mW) and number of frames, and shows the resulting sampling rate (1 /
+exposure - an upper bound, since at short exposures the camera readout
+can be the limit) and the minimum duration. Start runs it with the mask
+last loaded from the **SLM phase mask** panel; frames show up in the
+viewer's `preview` layer as they arrive. Stop ends it early, keeping the
+frames so far (the file is shrunk to them). When it ends, the panel
+shows where it was saved and the measured sampling rate.
+napari-micromanager's own MDA widget is still there for anything else,
+but don't give it XYZ positions on this setup.
+
+**Headless** (replaces `example_timelapse_mda.py`):
+`python -m experiments.timelapse <name>`, with `NUM_FRAMES`,
+`EXPOSURE_MS`, `LASER_POWER_MW` (defaults: `acquisition_defaults.timelapse`
+and `laser.default_power_mW`), `PHASE_MASK` and `PREVIEW` at the top.
+With `PREVIEW`, a napari window shows the latest frame; closing it before
+the end stops the run, keeping the frames so far.
 

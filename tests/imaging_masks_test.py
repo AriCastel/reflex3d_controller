@@ -12,10 +12,9 @@ laser). Checks:
 * experiments/load_phase_mask.py finds the core running in this process
   (the napari GUI's) and puts each preset's mask on the SLM, and refuses
   with a clear error when there is no core to be found;
-* example_timelapse_mda shows the requested mask for the acquisition
-  and saves it into the run folder (needs a display: run under xvfb).
+(The timelapse's phase mask is covered by tests/timelapse_test.py.)
 
-    xvfb-run -a python tests/imaging_masks_test.py
+    python tests/imaging_masks_test.py
 """
 import json
 import shutil
@@ -246,60 +245,6 @@ if _saved_pycromanager is None:
     del sys.modules["pycromanager"]
 else:
     sys.modules["pycromanager"] = _saved_pycromanager
-
-# ------------------------------------------------------------------ timelapse
-print("example_timelapse_mda with a phase mask")
-import napari
-from qtpy.QtWidgets import QApplication
-
-import experiments.example_timelapse_mda as tl
-
-slm_dev.shown = np.zeros((H, W), np.uint8)
-
-
-def fake_run():
-    app = QApplication.instance()
-    import time
-    t0 = time.time()
-    while (mmc.mda.is_running() or time.time() - t0 < 0.2) and time.time() - t0 < 30:
-        app.processEvents(); time.sleep(0.01)
-    shown_during_run.append(slm_dev.shown.copy())
-    t1 = time.time()
-    while time.time() - t1 < 0.5:  # let sequenceFinished's (queued) handler run
-        app.processEvents(); time.sleep(0.01)
-    napari.current_viewer().close()
-
-
-shown_during_run = []
-with mock.patch.object(tl, "load_config", lambda: config), \
-     mock.patch.object(tl, "load_mmcore", lambda cfg: mmc), \
-     mock.patch.object(tl, "NUM_FRAMES", 5), mock.patch.object(tl, "EXPOSURE_MS", 1), \
-     mock.patch.object(tl, "PHASE_MASK", "aberration_correction_edof"), \
-     mock.patch.object(tl.napari, "run", fake_run):
-    tl.main()
-check(len(shown_during_run) == 1 and
-      np.array_equal(shown_during_run[0], masks["aberration_correction_edof"]),
-      "timelapse: correction+EDOF mask on the SLM during the acquisition")
-tl_runs = sorted((WORK / "data").glob("*/*_example_timelapse_mda_*"))
-check(tl_runs and (tl_runs[-1] / "slm_mask.tif").exists()
-      and json.load(open(tl_runs[-1] / "slm_mask_metadata.json"))["preset"]
-      == "aberration_correction_edof", "timelapse: mask saved in the run folder")
-check(laser.get_property_value("S") == "closed", "timelapse: laser off afterwards")
-
-# Missing correction stops the timelapse before any hardware is touched.
-shutil.move(config.phase_masks_path, WORK / "moved.json")
-slm_dev.shown = np.zeros((H, W), np.uint8)
-n_before = len(list((WORK / "data").glob("*/*_example_timelapse_mda_*")))
-with mock.patch.object(tl, "load_config", lambda: config), \
-     mock.patch.object(tl, "load_mmcore", lambda cfg: (_ for _ in ()).throw(AssertionError("hw"))), \
-     mock.patch.object(tl, "PHASE_MASK", "aberration_correction"):
-    try:
-        tl.main(); check(False, "timelapse: missing correction raises")
-    except ValueError:
-        check(True, "timelapse: missing correction raises before touching hardware")
-check(len(list((WORK / "data").glob("*/*_example_timelapse_mda_*"))) == n_before,
-      "timelapse: ...and before creating a run folder")
-shutil.move(WORK / "moved.json", config.phase_masks_path)
 
 print()
 assert not failures, failures

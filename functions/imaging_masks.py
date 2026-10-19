@@ -136,3 +136,18 @@ def describe_imaging_mask(info):
             lines.append(f"    Noll {j:>2} {NOLL_NAMES.get(int(j), ''):<32} {c:+.4f} rad RMS")
     lines += [f"  WARNING: {w}" for w in info["warnings"]]
     return "\n".join(lines)
+
+
+# What this process last put on the SLM (mask, info), so a later
+# acquisition - e.g. a timelapse started from the napari GUI - can record
+# the mask it was taken with.
+_SHOWN = {}
+
+
+def remember_shown_mask(mask, info):
+    _SHOWN.update(mask=mask, info=info)
+
+
+def shown_mask():
+    """(mask, info) last shown on the SLM by this process, or (None, None)."""
+    return _SHOWN.get("mask"), _SHOWN.get("info")

@@ -246,3 +246,55 @@ def save_zstack_tiff(run_folder, stack, metadata, z_step_um=None, pixel_size_um=
     with open(run_folder / f"{Path(filename).stem}_metadata.json", "w") as f:
         json.dump(metadata, f, indent=2, default=str)
     return out_path
+
+
+class TimelapseTiffStream:
+    """
+    Streams a timelapse to disk frame by frame, so a long acquisition
+    never has to fit in memory: the ImageJ hyperstack (TYX) is
+    pre-allocated for `num_frames` frames and each frame is written into
+    it as it arrives. If fewer frames arrive (the run was stopped),
+    `close` shrinks the file to the frames actually acquired.
+
+    Usage:
+        stream = TimelapseTiffStream(run_folder, "beads.tif", n, (h, w), np.uint16)
+        stream.write(t, frame)  ...
+        path = stream.close(metadata)   # also writes beads_metadata.json
+    """
+
+    def __init__(self, run_folder, filename, num_frames, frame_shape, dtype,
+                 frame_interval_s=None):
+        self.path = Path(run_folder) / filename
+        self.num_frames = int(num_frames)
+        self.frame_shape = tuple(frame_shape)
+        self.dtype = np.dtype(dtype)
+        self._ij_metadata = {"axes": "TYX"}
+        if frame_interval_s:
+            self._ij_metadata["finterval"] = float(frame_interval_s)
+        self._data = tifffile.memmap(
+            self.path, shape=(self.num_frames, *self.frame_shape), dtype=self.dtype,
+            imagej=True, metadata=self._ij_metadata,
+        )
+        self.frames_written = 0
+
+    def write(self, t, frame):
+        self._data[t] = frame
+        self.frames_written = max(self.frames_written, t + 1)
+
+    def close(self, metadata):
+        data, self._data = self._data, None
+        data.flush()
+        del data
+        n = self.frames_written
+        if n == 0:
+            self.path.unlink()  # nothing acquired: don't leave an all-zero stack
+        elif n < self.num_frames:
+            tmp = self.path.with_suffix(".partial.tif")
+            src = tifffile.memmap(self.path, mode="r")
+            tifffile.imwrite(tmp, (src[i] for i in range(n)), shape=(n, *self.frame_shape),
+                             dtype=self.dtype, imagej=True, metadata=self._ij_metadata)
+            del src
+            shutil.move(tmp, self.path)
+        with open(self.path.with_name(f"{self.path.stem}_metadata.json"), "w") as f:
+            json.dump(metadata, f, indent=2, default=str)
+        return self.path
