@@ -51,9 +51,9 @@
       "z": 0.0
     },
     "axis_properties": {
-      "horizontal": "Current Y",
+      "horizontal": "Current X",
       "vertical": "Current Z",
-      "depth": "Current X"
+      "depth": "Current Y"
     },
     "microstep_um": 0.0625,
     "settle_s": 0.5,
