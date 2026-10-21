@@ -50,6 +50,7 @@ functions/adaptive_optics.py     Pupil Zernike masks, guide-star camera, SPSA op
                                   results figure
 functions/imaging_masks.py       Imaging phase masks per channel (stored correction,
                                   EDOF, both, flat), the mask currently shown
+functions/mmcore_rotator.py      PR50CC rotation stage: initialize, rotate by / to an angle
 functions/phase_masks.py         Flat masks, Zernike probe patches, raster positions
 functions/localization.py        Point-source centroid localization
 experiments/                     Minimal scripts: parameters + function calls only
@@ -61,7 +62,8 @@ experiments/                     Minimal scripts: parameters + function calls on
   aberration_correction.py         Sensorless AO on a guide star (pymmcore-plus)
   store_ao_correction.py           Store an earlier AO run's coefficients in phase_masks.json
   psf_characterization.py          Depth stack of a guide star with a chosen phase mask
-  imaging_gui.py                   napari-micromanager GUI + 'SLM phase mask' panel
+  imaging_gui.py                   napari-micromanager GUI + 'SLM phase mask', 'Timelapse'
+                                    and 'Rotator' panels
   load_phase_mask.py               Load a mask preset onto the SLM (stored correction,
                                     EDOF, both, flat), from the napari GUI or with
                                     Micro-Manager 2.0
@@ -82,6 +84,7 @@ tests/
                                     with a known aberration (python tests/ao_sim_test.py)
   mm2_slm_test.py                  load_phase_mask with Micro-Manager 2.0, against a
                                     fake pycromanager Core (python tests/mm2_slm_test.py)
+  rotator_test.py                  Rotator logic and napari panel, against a simulated stage
   psf_characterization_test.py     PSF depth stack on a simulated microscope whose stage
                                     has backlash (python tests/psf_characterization_test.py)
   imaging_masks_test.py            phase_masks.json store, imaging masks and the mask
@@ -463,6 +466,30 @@ takes care of:
 * If anything fails mid-scan, the laser is switched off, the stage goes
   back to its starting depth and the camera ROI is cleared.
 
+
+## Rotation stage (PR50CC)
+
+The **Rotator** panel of `python -m experiments.imaging_gui` aligns the
+sample's rotation with the objective. **Initialize (find home)** sets the
+stage's `find_home` property to `FIND HOME NOW` (after a confirmation, since
+homing rotates the sample away from its alignment). The **Coarse** and
+**Fine** rows each have a step size in degrees and a counter-clockwise
+(`↺ −step`) and a clockwise (`+step ↻`) button; the panel shows the current
+angle (positive = clockwise). The step sizes can be changed at any time
+in the panel — e.g. 45° / 10° for one data run and 10° / 0.5° for the
+next — and every click uses the value it has then; their starting values
+are `rotator.coarse_step_deg` / `fine_step_deg`.
+
+The stage only accepts absolute positions (its `X Axis` property, in
+milli-degrees), so a rotation by 3° reads the current position and writes
+it plus 3000 (`functions/mmcore_rotator.py`). Moves run on a worker thread,
+so the GUI (and live view) stay responsive; the panel is locked until the
+stage is done. It writes no run folders or logs. The `rotator` section of
+`config/microscope_config.json` holds the device label (check it in the
+property browser — `PR50CC` is a guess), the property names, the home
+command, `units_per_degree` (1000) and optional `min_deg` / `max_deg`
+limits; without the device in the hardware config the panel is skipped
+with a warning.
 
 ## Continuous timelapse
 

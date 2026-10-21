@@ -3,14 +3,17 @@ experiments/imaging_gui.py
 
 Opens the napari GUI for imaging: napari-micromanager on the hardware
 config from config/microscope_config.json (pymmcore_plus section), with
-a flat mask on the SLM, plus two panels:
+a flat mask on the SLM, plus these panels:
 
 * 'SLM phase mask': buttons that run experiments/load_phase_mask.py with
   each preset inside this process;
 * 'Timelapse': name, exposure (ms), laser power (mW) and number of frames
   (with the resulting sampling rate), which runs experiments/timelapse.py
   - a continuous timelapse at the current position, saved under the
-  name in the usual dated run folder.
+  name in the usual dated run folder;
+* 'Rotator': initialize the PR50CC rotation stage and turn it by a coarse
+  or a fine step (both adjustable in the panel at any time), clockwise or
+  counter-clockwise. Writes no run folders or logs - it's used all the time.
 
 Workflow:
 1. Position the sample and set exposure, laser power etc. with the
@@ -40,7 +43,8 @@ from experiments import load_phase_mask, timelapse
 from functions.mmcore_laser import laser_off_mmcore
 from functions.mmcore_slm import MMCoreSLM
 from functions.imaging_masks import build_imaging_mask, remember_shown_mask
-from functions.napari_preview import add_script_panel, add_timelapse_panel
+from functions.mmcore_rotator import Rotator
+from functions.napari_preview import add_rotator_panel, add_script_panel, add_timelapse_panel
 
 # ---- parameters: panel button label -> load_phase_mask preset ----
 MASK_PRESETS = {
@@ -99,6 +103,22 @@ def main():
         num_frames=defaults.get("num_frames", 100),
         max_laser_mW=config.get("laser", "max_power_mW"),
     )
+
+    if config.get("rotator") is not None:
+        try:
+            rotator = Rotator(mmc, config)
+        except ValueError as exc:
+            warnings.warn(f"Rotator panel not added: {exc}", stacklevel=1)
+        else:
+            if rotator.label in mmc.getLoadedDevices():
+                add_rotator_panel(
+                    viewer, rotator.initialize, rotator.rotate_by, rotator.position_deg,
+                    coarse_deg=rotator.coarse_step_deg, fine_deg=rotator.fine_step_deg,
+                )
+            else:
+                warnings.warn(f"Rotator panel not added: no device '{rotator.label}' in the "
+                              f"Micro-Manager hardware config (rotator.device_label).",
+                              stacklevel=1)
 
     try:
         napari.run()

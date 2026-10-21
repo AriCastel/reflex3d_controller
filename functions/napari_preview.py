@@ -317,3 +317,136 @@ def add_timelapse_panel(viewer, start, stop, exposure_ms, laser_power_mW, num_fr
     panel.setMinimumHeight(outer.minimumSize().height() + 60)  # don't let the dock squash the rows
     viewer.window.add_dock_widget(panel, name=title, area="right")
     return panel
+
+
+def add_rotator_panel(viewer, initialize, rotate_by, read, coarse_deg, fine_deg,
+                      confirm_initialize=None, title="Rotator"):
+    """
+    Dock the rotation-stage controls: an Initialize (find home) button, the
+    current angle, and counter-clockwise / clockwise buttons for a coarse
+    and a fine step. The two step sizes (degrees) are spin boxes that can
+    be changed at any time, between and during runs; each click reads the
+    step as it is at that moment.
+
+    `initialize()`, `rotate_by(delta_deg)` and `read()` each return the
+    angle in degrees (positive clockwise). They run on a worker thread, so
+    a slow move doesn't freeze the GUI, with the panel disabled until
+    they're done. Initialize first asks `confirm_initialize()` (default: a
+    dialog), since homing rotates the sample away from its alignment.
+    Returns the panel widget.
+    """
+    import math
+    import threading
+
+    from napari.utils.notifications import show_error
+    from qtpy.QtCore import QObject, Signal, Slot
+    from qtpy.QtWidgets import (
+        QDoubleSpinBox, QGridLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+    )
+
+    class _Relay(QObject):
+        # Same pattern as the timelapse panel: the slot lives on the GUI
+        # thread, so emitting from the worker thread is queued onto it.
+        finished = Signal(str, float, bool)
+
+        def __init__(self, parent, callback):
+            super().__init__(parent)
+            self._callback = callback
+            self.finished.connect(self._deliver)
+
+        @Slot(str, float, bool)
+        def _deliver(self, message, angle, ok):
+            self._callback(message, angle, ok)
+
+    panel = QWidget()
+    outer = QVBoxLayout(panel)
+    angle_label = QLabel("<b>Angle: ?</b>")
+    angle_label.setToolTip("Positive = clockwise, as the stage reports it.")
+    init_button = QPushButton("Initialize (find home)")
+    outer.addWidget(init_button)
+    outer.addWidget(angle_label)
+
+    grid = QGridLayout()
+    outer.addLayout(grid)
+    steps, ccw_buttons, cw_buttons = {}, {}, {}
+    for row, (name, value) in enumerate((("Coarse", coarse_deg), ("Fine", fine_deg))):
+        spin = QDoubleSpinBox()
+        spin.setRange(0.001, 360.0); spin.setDecimals(3); spin.setSingleStep(0.5)
+        spin.setSuffix("°"); spin.setValue(value)
+        steps[name] = spin
+        ccw_buttons[name], cw_buttons[name] = QPushButton(), QPushButton()
+        grid.addWidget(QLabel(f"{name} step"), row, 0)
+        grid.addWidget(spin, row, 1)
+        grid.addWidget(ccw_buttons[name], row, 2)
+        grid.addWidget(cw_buttons[name], row, 3)
+
+    status = QLabel("")
+    status.setWordWrap(True)
+    outer.addWidget(status)
+    outer.addStretch()
+    controls = [init_button, *steps.values(), *ccw_buttons.values(), *cw_buttons.values()]
+
+    def _relabel(*_):
+        for name, spin in steps.items():
+            ccw_buttons[name].setText(f"↺ −{spin.value():g}°")
+            cw_buttons[name].setText(f"+{spin.value():g}° ↻")
+            ccw_buttons[name].setToolTip(f"{name}: rotate {spin.value():g}° counter-clockwise")
+            cw_buttons[name].setToolTip(f"{name}: rotate {spin.value():g}° clockwise")
+
+    def _set_busy(busy):
+        for w in controls:
+            w.setEnabled(not busy)
+
+    def _on_finished(message, angle, ok):
+        _set_busy(False)
+        status.setText(message)
+        if not math.isnan(angle):
+            angle_label.setText(f"<b>Angle: {angle:.3f}°</b>")
+        if not ok:
+            show_error(message)
+
+    relay = _Relay(panel, _on_finished)
+
+    def _run(label, operation):
+        _set_busy(True)
+        status.setText(f"{label}...")
+
+        def work():
+            try:
+                angle = float(operation())
+            except Exception as exc:
+                relay.finished.emit(f"FAILED: {label}: {exc}", math.nan, False)
+            else:
+                relay.finished.emit(f"{label}: done", angle, True)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _confirm():
+        return QMessageBox.question(
+            panel, "Initialize rotator",
+            "Finding home rotates the stage and loses the current alignment. Continue?",
+        ) == QMessageBox.StandardButton.Yes
+
+    confirm = confirm_initialize or _confirm
+
+    def _initialize(_checked=False):
+        if confirm():
+            _run("Initialize", initialize)
+
+    def _rotate(name, sign):
+        def click(_checked=False):
+            step = sign * steps[name].value()
+            _run(f"Rotate {step:+g}°", lambda: rotate_by(step))
+        return click
+
+    init_button.clicked.connect(_initialize)
+    for name, spin in steps.items():
+        spin.valueChanged.connect(_relabel)
+        ccw_buttons[name].clicked.connect(_rotate(name, -1))
+        cw_buttons[name].clicked.connect(_rotate(name, +1))
+    _relabel()
+
+    panel.setMinimumHeight(outer.minimumSize().height() + 40)
+    viewer.window.add_dock_widget(panel, name=title, area="right")
+    _run("Read angle", read)
+    return panel
