@@ -13,8 +13,9 @@ presets, on both channels' pupils (imaging_masks.channels):
 
 Load it after positioning the sample and before starting the acquisition.
 The mask stays on the SLM until another one is loaded. Nothing is
-acquired: the mask and what it's made of are recorded in a small run
-folder, so the data can be matched to the mask that was on the SLM.
+acquired and nothing is written to disk (swapping masks is routine, so no
+run folder per load): the timelapse and the other experiments record the
+mask they run with in their own folders.
 
 The same script works with both ways of running the microscope:
 
@@ -35,9 +36,6 @@ if __package__ in (None, ""):  # run by path, e.g. %run in napari's console
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from core.config import load_config
-from core.file_io import save_phase_mask
-from core.logging_setup import setup_logger
-from core.session import Session
 from functions.imaging_masks import (
     PRESETS,
     build_imaging_mask,
@@ -68,11 +66,8 @@ def main(preset=None):
         slm.show_mask(mask)
     remember_shown_mask(mask, info)
 
-    session = Session(config, script_name=f"load_phase_mask_{preset}")
-    logger = setup_logger(session.path)
-    save_phase_mask(session.path, mask, info)
-    logger.info(describe_imaging_mask(info))
-    logger.info(f"Shown on the SLM; recorded in {session.path}")
+    print(describe_imaging_mask(info))
+    print("Shown on the SLM.")
     return info
 
 

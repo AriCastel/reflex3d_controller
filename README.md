@@ -381,12 +381,12 @@ is alive, so the script runs *inside* the GUI's process:
    napari-micromanager widgets.
 3. Load the mask with a button in the **SLM phase mask** panel, or run
    the script from napari's console (`%run experiments/load_phase_mask.py edof`;
-   with your own napari-micromanager window, give the full path). Each
-   load writes a small run folder with the mask (`slm_mask.tif`) and
-   what it is made of (`slm_mask_metadata.json`: preset, coefficients
-   per channel, which stored correction), so data can be matched to the
-   mask that was on the SLM. A missing stored correction is reported
-   and the SLM is left as it was; masks aren't changed while an
+   with your own napari-micromanager window, give the full path). Loading
+   writes nothing to disk, since swapping masks is routine; the mask is
+   recorded (`slm_mask.tif` + `slm_mask_metadata.json`: preset,
+   coefficients per channel, which stored correction) by the experiment
+   that uses it, in that run's folder. A missing stored correction is
+   reported and the SLM is left as it was; masks aren't changed while an
    acquisition is running.
 4. Start the timelapse from the **Timelapse** panel (see "Continuous
    timelapse" below). The mask stays up until another one is loaded or
@@ -408,8 +408,7 @@ The mask goes through Micro-Manager's Generic SLM device
 exits, until another is loaded. Micro-Manager
 must have the pycro-manager server enabled (Tools > Options > "Run
 pycro-manager server on port 4827") and the Generic SLM device in its
-hardware config, at `slm.resolution`. Each load is recorded in a run
-folder as above.
+hardware config, at `slm.resolution`. Nothing is written to disk.
 
 **Headless timelapse.** `experiments/timelapse.py` takes `PHASE_MASK`
 (one of the four presets, default `"flat"`) at the top. The mask is

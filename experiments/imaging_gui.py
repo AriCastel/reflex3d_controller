@@ -17,8 +17,8 @@ Workflow:
    napari-micromanager widgets (live view, property browser).
 2. Load the phase mask for the acquisition with a button in the
    'SLM phase mask' panel (or `%run experiments/load_phase_mask.py <preset>`
-   in napari's console - same thing). Each load is recorded in its own
-   small run folder (mask TIFF + what it's made of).
+   in napari's console - same thing). Loading writes nothing to disk;
+   the timelapse saves the mask it ran with in its own folder.
 3. Fill in the 'Timelapse' panel and press Start (Stop ends it early,
    keeping the frames so far). The frames show up in the viewer as they
    come in, and the panel reports where they were saved and the measured

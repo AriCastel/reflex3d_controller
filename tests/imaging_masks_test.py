@@ -235,11 +235,8 @@ for preset in PRESETS:
         lpm.main(preset)
     check(np.array_equal(slm_dev.shown, masks[preset]),
           f"load_phase_mask '{preset}': mask on the SLM")
-    folders = sorted((WORK / "data").glob(f"*/*_load_phase_mask_{preset}_*"))
-    rec = folders[-1] if folders else None
-    check(rec is not None and (rec / "slm_mask.tif").exists()
-          and json.load(open(rec / "slm_mask_metadata.json"))["preset"] == preset,
-          f"load_phase_mask '{preset}': recorded in {rec.name if rec else '(none)'}")
+    check(not list((WORK / "data").glob("*/*_load_phase_mask_*")),
+          f"load_phase_mask '{preset}': no run folder written")
 
 if _saved_pycromanager is None:
     del sys.modules["pycromanager"]
