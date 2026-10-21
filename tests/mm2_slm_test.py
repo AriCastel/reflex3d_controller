@@ -8,7 +8,7 @@ test also checks that the mask is sent as byte[] (8-bit grey levels),
 not int[] (32-bit RGB). Checks:
 
 * every script displays exactly the mask build_imaging_mask gives for
-  its preset (both channels), row-major, and records it in a run folder;
+  its preset (both channels), row-major, without writing a run folder;
 * a missing stored correction raises before the SLM is touched;
 * a missing SLM device or a resolution mismatch is refused.
 
@@ -115,9 +115,8 @@ for preset in PRESETS:
     check(core.shown is not None and np.array_equal(core.shown, expected),
           f"{preset}: mask displayed")
     check(core.overloads[-1] == "byte[]", f"{preset}: sent as byte[] (8-bit)")
-    rec = sorted((WORK / "data").glob(f"*/*_load_phase_mask_{preset}_*"))
-    check(rec and json.load(open(rec[-1] / "slm_mask_metadata.json"))["preset"] == preset,
-          f"{preset}: recorded in a run folder")
+    check(not list((WORK / "data").glob("*/*_load_phase_mask_*")),
+          f"{preset}: no run folder written")
 check(not np.array_equal(build_imaging_mask(config, "edof")[0].T.ravel(),
                          build_imaging_mask(config, "edof")[0].ravel()),
       "(the row-major check above is meaningful: the mask isn't transpose-symmetric)")

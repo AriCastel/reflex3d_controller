@@ -114,13 +114,46 @@ def set_guide_star_roi(mmc, center_xy, size_px):
     return tuple(mmc.getROI())
 
 
+class _FrameStack:
+    """MDA output handler collecting every frame of a run into one (T, Y, X) array."""
+
+    def __init__(self, n_frames, shape, dtype):
+        self.stack = np.empty((n_frames, *shape), dtype)
+        self.count = 0
+
+    def frameReady(self, img, event, meta):
+        if self.count < len(self.stack):
+            self.stack[self.count] = img
+            self.count += 1
+
+
 def acquire_dark_frame(mmc, n_frames):
-    """Average of `n_frames` snaps; call with the illumination OFF."""
-    total = None
-    for _ in range(n_frames):
-        frame = mmc.snap().astype(np.float32)
-        total = frame if total is None else total + frame
-    return total / n_frames
+    """
+    Average of `n_frames` frames at the current exposure and ROI; call with
+    the illumination OFF. The frames come from a single MDA run (one
+    hardware-sequenced camera acquisition) instead of a snap() per frame,
+    which pays the setup and teardown of a whole acquisition every time;
+    the stack is held in RAM and averaged with np.mean.
+    """
+    from useq import MDAEvent
+
+    n_frames = int(n_frames)
+    if mmc.mda.is_running():
+        raise RuntimeError("An acquisition is running - not taking dark frames meanwhile.")
+    if mmc.isSequenceRunning():   # e.g. live view: the camera can't do both
+        mmc.stopSequenceAcquisition()
+
+    shape = (mmc.getImageHeight(), mmc.getImageWidth())
+    dtype = {1: np.uint8, 2: np.uint16, 4: np.uint32}.get(mmc.getBytesPerPixel(), np.uint16)
+    from core.file_io import TimelapseRamBuffer
+    TimelapseRamBuffer.check_fits(n_frames, shape, dtype)
+
+    frames = _FrameStack(n_frames, shape, dtype)
+    events = [MDAEvent(index={"t": t}) for t in range(n_frames)]
+    mmc.run_mda(events, output=frames, block=True)
+    if frames.count == 0:
+        raise RuntimeError("No dark frames were acquired.")
+    return np.mean(frames.stack[:frames.count], axis=0, dtype=np.float32)
 
 
 def snap_guide_star(mmc, dark):
