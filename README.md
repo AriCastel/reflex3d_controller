@@ -70,7 +70,6 @@ calibration/                     Infrequent, complex routines
   fourier_refinement.py            Helpers for the refinement pass (stored centres)
   map_analysis.py                  Centre estimation from the d^2 map
   map_preview.py                   Preview figure builder
-gui/                              (empty for now) tkinter UI, fully isolated
 tests/
   e2e_test.py                      Alignment acquisition -> analysis -> config
                                     write-back on a simulated pymmcore-plus
@@ -140,10 +139,7 @@ doesn't change.
    on the actual acquisition PC.
 3. **Set `acquisition_defaults.root_folder`** to wherever you want
    run folders written.
-4. `fourier_plane` is unused by the base timelapse experiment — it's
-   there for the upcoming phase-mask-generation code (EDOF, Zernike
-   terms, etc.) so those numbers live in one place from the start.
-   **Set `camera.channel_rois`** (a square ROI per polarization
+4. **Set `camera.channel_rois`** (a square ROI per polarization
    channel: `position_px` = top-left `[x, y]`, `size_px` = side, in
    full-frame camera pixels) before running the Fourier-plane
    alignment. They only need setting once, since each channel always
@@ -171,8 +167,7 @@ python -m experiments.example_timelapse
 ```
 
 This displays a flat/neutral phase mask on the SLM, records a
-50-frame timelapse (2 s interval, 100 ms exposure — edit the
-constants at the top of the script to change this), and writes
+timelapse with the settings at the top of the script, and writes
 `timelapse.tif` (TZCYX ImageJ hyperstack) plus a metadata JSON
 sidecar into a new run folder under `acquisition_defaults.root_folder`.
 
@@ -514,7 +509,7 @@ shows where it was saved and the measured sampling rate.
 napari-micromanager's own MDA widget is still there for anything else,
 but don't give it XYZ positions on this setup.
 
-**Headless** (replaces `example_timelapse_mda.py`):
+**Headless:**
 `python -m experiments.timelapse <name>`, with `NUM_FRAMES`,
 `EXPOSURE_MS`, `LASER_POWER_MW` (defaults: `acquisition_defaults.timelapse`
 and `laser.default_power_mW`), `PHASE_MASK` and `PREVIEW` at the top.

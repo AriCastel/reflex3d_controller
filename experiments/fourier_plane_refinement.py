@@ -64,6 +64,7 @@ from calibration.fourier_alignment import (
     preview_sample_positioning,
     prompt_choice,
     prompt_yes_no,
+    show_figure,
     verify_point_source,
 )
 from calibration.fourier_refinement import calibrated_channels, stored_center
@@ -241,7 +242,7 @@ def _analyse(config, logger, session, window_r, channel, mode, previous,
     preview_path = save_figure(session.path, fig,
                                filename="fourier_refinement_preview.png")
     logger.info(f"Preview saved to {preview_path}")
-    _show_figure(fig)
+    show_figure()
 
     print(f"\nChannel '{channel}' Fourier-plane centre:")
     print(f"  previous: ({previous[0]:.1f}, {previous[1]:.1f}) SLM px")
@@ -268,16 +269,6 @@ def _analyse(config, logger, session, window_r, channel, mode, previous,
     )
     logger.info(f"Wrote centre to {cfg_path} (backup at {backup_path})")
     print(f"Written to {cfg_path}\nPrevious config backed up at {backup_path}")
-
-
-def _show_figure(fig):
-    """Show a figure, degrading gracefully on a headless machine."""
-    try:
-        import matplotlib.pyplot as plt
-        plt.show()
-    except Exception as exc:  # no display available
-        print(f"(Could not open a plot window: {exc}. "
-              f"The saved PNG in the run folder has the same content.)")
 
 
 if __name__ == "__main__":

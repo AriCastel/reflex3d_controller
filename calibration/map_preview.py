@@ -6,6 +6,22 @@ it, so core/file_io.py stays the only thing that writes to disk.
 """
 import numpy as np
 
+from calibration.map_analysis import binned_radial_profile
+
+
+def _extent(xs, ys):
+    """imshow extent putting each map value on its raster position."""
+    dx = float(np.mean(np.diff(xs))) if len(xs) > 1 else 1.0
+    dy = float(np.mean(np.diff(ys))) if len(ys) > 1 else 1.0
+    return [xs[0] - dx / 2, xs[-1] + dx / 2, ys[-1] + dy / 2, ys[0] - dy / 2], dx
+
+
+def _plot_radial_profile(ax, r, d2, ok, nb=15):
+    """Binned mean of the map points vs radius."""
+    cen, prof = binned_radial_profile(r, d2, ok, np.linspace(0, r[ok].max(), nb + 1))
+    keep = np.isfinite(prof)
+    ax.plot(cen[keep], prof[keep], "-o", color="crimson", ms=4, label="binned mean")
+
 
 def build_map_figure(x_centers, y_centers, d2_map, result, config, channel):
     import matplotlib.pyplot as plt
@@ -14,9 +30,7 @@ def build_map_figure(x_centers, y_centers, d2_map, result, config, channel):
     ys = np.asarray(y_centers, float)
     d2 = np.asarray(d2_map, float)
 
-    dx = float(np.mean(np.diff(xs))) if len(xs) > 1 else 1.0
-    dy = float(np.mean(np.diff(ys))) if len(ys) > 1 else 1.0
-    extent = [xs[0] - dx / 2, xs[-1] + dx / 2, ys[-1] + dy / 2, ys[0] - dy / 2]
+    extent, _ = _extent(xs, ys)
 
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
 
@@ -57,17 +71,7 @@ def build_map_figure(x_centers, y_centers, d2_map, result, config, channel):
         ok = np.isfinite(d2)
         ax2.plot(r[ok], d2[ok], ".", ms=4, alpha=0.5, color="0.5",
                  label="map points")
-        # binned mean profile
-        nb = 15
-        edges = np.linspace(0, np.nanmax(r[ok]), nb + 1)
-        cen, prof = [], []
-        for i in range(nb):
-            sel = ok & (r >= edges[i]) & (r < edges[i + 1])
-            if sel.sum():
-                cen.append(0.5 * (edges[i] + edges[i + 1]))
-                prof.append(np.nanmean(d2[sel]))
-        ax2.plot(cen, prof, "-o", color="crimson", ms=4,
-                 label="binned mean")
+        _plot_radial_profile(ax2, r, d2, ok)
         fit_r = result.get("fit_radius_px")
         if fit_r and np.isfinite(fit_r):
             ax2.axvline(fit_r, color="steelblue", ls="--",
@@ -134,9 +138,7 @@ def build_refinement_figure(x_centers, y_centers, d2_map, result, config,
 
     # --- middle: the fine map ---
     ax = axes[1]
-    dx = float(np.mean(np.diff(xs))) if len(xs) > 1 else 1.0
-    dy = float(np.mean(np.diff(ys))) if len(ys) > 1 else 1.0
-    extent = [xs[0] - dx / 2, xs[-1] + dx / 2, ys[-1] + dy / 2, ys[0] - dy / 2]
+    extent, dx = _extent(xs, ys)
     cmap = plt.get_cmap("viridis").copy()
     cmap.set_bad("0.9")
     im = ax.imshow(np.ma.masked_invalid(d2), origin="upper", extent=extent,
@@ -163,15 +165,7 @@ def build_refinement_figure(x_centers, y_centers, d2_map, result, config,
         ok = np.isfinite(d2)
         ax.plot(r[ok], d2[ok], ".", ms=3, alpha=0.4, color="0.5",
                 label="map points")
-        nb = 15
-        edges = np.linspace(0, r[ok].max(), nb + 1)
-        cen, prof = [], []
-        for i in range(nb):
-            sel = ok & (r >= edges[i]) & (r < edges[i + 1])
-            if sel.sum():
-                cen.append(0.5 * (edges[i] + edges[i + 1]))
-                prof.append(np.nanmean(d2[sel]))
-        ax.plot(cen, prof, "-o", color="crimson", ms=4, label="binned mean")
+        _plot_radial_profile(ax, r, d2, ok)
     ax.set_xlabel("distance from refined centre (SLM px)")
     ax.set_ylabel(r"$d^2$  (camera px$^2$)")
     ax.set_title("Radial profile")

@@ -41,6 +41,7 @@ from calibration.fourier_alignment import (
     preview_sample_positioning,
     prompt_choice,
     prompt_yes_no,
+    show_figure,
     slm_settle_seconds,
     verify_point_source,
 )
@@ -129,7 +130,7 @@ def main():
     print(f"\nMetric {metric_cfg['name']}: {result['metric_original']:.4g} (flat) -> "
           f"{result['metric_corrected']:.4g} (corrected); "
           f"corrected/original power {result['power_ratio']:.2f}")
-    _show_figure()
+    show_figure()
 
     store = config.phase_masks_path
     if prompt_yes_no(f"Store these coefficients in {store.name} as the '{AO_METHOD}' correction "
@@ -197,15 +198,6 @@ def _acquire(mmc, config, ao, slm, logger, iterations, exposure_ms,
         blank_laser_during_settle=ao["blank_laser_during_settle"],
     )
     return channel, result, gs_roi
-
-
-def _show_figure():
-    try:
-        import matplotlib.pyplot as plt
-        plt.show()
-    except Exception as exc:  # no display available
-        print(f"(Could not open a plot window: {exc}. "
-              f"The saved PNG in the run folder has the same content.)")
 
 
 if __name__ == "__main__":

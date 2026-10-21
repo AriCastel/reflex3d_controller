@@ -29,6 +29,7 @@ instead of letting them bias the centre estimate.
 Never writes to disk.
 """
 import numpy as np
+from scipy import ndimage
 
 
 def localize_psf(
@@ -74,28 +75,25 @@ def localize_psf(
         return None
 
     if method == "frame_centroid":
-        yy, xx = np.mgrid[0:img.shape[0], 0:img.shape[1]]
-        w = np.where(sub > threshold_fraction * peak, sub, 0.0)
+        y0 = x0 = 0
+        win = sub
     elif method == "windowed":
         y0 = max(0, iy - window_half_px)
         y1 = min(img.shape[0], iy + window_half_px + 1)
         x0 = max(0, ix - window_half_px)
         x1 = min(img.shape[1], ix + window_half_px + 1)
         win = sub[y0:y1, x0:x1]
-        yy, xx = np.mgrid[y0:y1, x0:x1]
-        w = np.where(win > threshold_fraction * peak, win, 0.0)
     else:
         raise ValueError(
             f"Unknown localization method {method!r}; "
             "expected 'frame_centroid' or 'windowed'."
         )
 
-    total = w.sum()
-    if total <= 0:
+    w = np.where(win > threshold_fraction * peak, win, 0.0)
+    if w.sum() <= 0:
         return None
-
-    cx = float((w * xx).sum() / total)
-    cy = float((w * yy).sum() / total)
+    cy, cx = ndimage.center_of_mass(w)
+    cx, cy = float(cx + x0), float(cy + y0)
 
     return {
         "x": cx,

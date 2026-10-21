@@ -32,27 +32,15 @@ import time
 from datetime import datetime
 
 import numpy as np
+from tqdm import tqdm
 
 from functions.localization import localize_psf, squared_separation
 from functions.mmcore_camera import get_all_channel_rois
 from functions.mmcore_laser import laser_off_mmcore, laser_on_mmcore, set_laser_power_mmcore
+from functions.mmcore_slm import slm_settle_seconds
 from functions.napari_preview import run_live_roi_preview
 from functions.phase_masks import flat_mask, raster_positions, zernike_patch_mask
 from functions.zernike import MODE_INDICES
-
-
-def slm_settle_seconds(config):
-    """
-    How long to wait after pushing a mask before snapping.
-
-    The SLM runs at a fixed refresh rate (30 Hz here), so a frame
-    snapped too early shows the PREVIOUS mask. Waiting a few frame
-    periods covers both the refresh latency and liquid-crystal
-    relaxation.
-    """
-    rate = config.get("slm", "refresh_rate_hz", default=30)
-    frames = config.get("slm", "settle_frames", default=3)
-    return float(frames) / float(rate)
 
 
 def estimate_duration_s(config, n_positions, exposure_ms, overhead_ms=25.0):
@@ -164,8 +152,7 @@ def acquire_d2_map(
     only positions where the mask is True are acquired, the rest stay
     NaN in the returned map.
 
-    With `use_tqdm` a tqdm progress bar replaces the periodic log lines
-    (falling back to them if tqdm isn't installed).
+    With `use_tqdm` a tqdm progress bar replaces the periodic log lines.
 
     Returns
     -------
@@ -198,15 +185,8 @@ def acquire_d2_map(
     if n_pos == 0:
         raise ValueError("Raster produced no positions — check step_px/ranges.")
 
-    tqdm = None
     if use_tqdm:
-        try:
-            from tqdm import tqdm
-        except ImportError:
-            logger.warning("tqdm is not installed; falling back to log-line "
-                           "progress (pip install tqdm).")
-        else:
-            progress_every = 0
+        progress_every = 0
 
     settle = slm_settle_seconds(config)
     logger.info(
@@ -227,7 +207,7 @@ def acquire_d2_map(
     n_failed = 0
     t_start = time.time()
     bar = (tqdm(total=n_pos, desc="Rastering", unit="pos", dynamic_ncols=True)
-           if tqdm is not None else None)
+           if use_tqdm else None)
 
     try:
         for k, (iy, ix) in enumerate(to_acquire, start=1):
@@ -319,6 +299,16 @@ def prompt_choice(question, options, default=None):
         if ans in opts:
             return ans
         print(f"  Please enter one of: {', '.join(opts)}")
+
+
+def show_figure():
+    """Show the open matplotlib figures, degrading gracefully on a headless machine."""
+    try:
+        import matplotlib.pyplot as plt
+        plt.show()
+    except Exception as exc:  # no display available
+        print(f"(Could not open a plot window: {exc}. "
+              f"The saved PNG in the run folder has the same content.)")
 
 
 def prompt_yes_no(question, default=False):

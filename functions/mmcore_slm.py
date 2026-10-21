@@ -22,6 +22,19 @@ import numpy as np
 BACKENDS = ("napari", "micromanager")
 
 
+def slm_settle_seconds(config):
+    """
+    How long to wait after pushing a mask before snapping.
+
+    The SLM runs at a fixed refresh rate, so a frame snapped too early
+    shows the PREVIOUS mask. Waiting a few frame periods covers both the
+    refresh latency and liquid-crystal relaxation.
+    """
+    rate = config.get("slm", "refresh_rate_hz", default=30)
+    frames = config.get("slm", "settle_frames", default=3)
+    return float(frames) / float(rate)
+
+
 class MMCoreSLM:
     """
     Thin wrapper around Micro-Manager's Generic SLM device, addressed

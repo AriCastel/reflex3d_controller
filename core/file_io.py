@@ -14,6 +14,12 @@ import numpy as np
 import tifffile
 
 
+def _write_json(path, data):
+    """Write a metadata sidecar (non-JSON values, e.g. Paths, as strings)."""
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2, default=str)
+
+
 def save_timelapse_tiff(run_folder, frames, metadata, filename="timelapse.tif"):
     """
     Save a timelapse as an ImageJ-compatible hyperstack with TZCYX axis
@@ -54,10 +60,7 @@ def save_timelapse_tiff(run_folder, frames, metadata, filename="timelapse.tif"):
 
     # Full metadata (including things ImageJ tags can't hold well, like
     # per-frame timestamp lists) is also kept as a sidecar JSON.
-    meta_path = run_folder / f"{Path(filename).stem}_metadata.json"
-    with open(meta_path, "w") as f:
-        json.dump(metadata, f, indent=2, default=str)
-
+    _write_json(run_folder / f"{Path(filename).stem}_metadata.json", metadata)
     return out_path
 
 
@@ -67,9 +70,7 @@ def save_frame_tiff(run_folder, frame, metadata=None, filename="frame.tif"):
     out_path = run_folder / filename
     tifffile.imwrite(out_path, np.asarray(frame))
     if metadata is not None:
-        meta_path = run_folder / f"{Path(filename).stem}_metadata.json"
-        with open(meta_path, "w") as f:
-            json.dump(metadata, f, indent=2, default=str)
+        _write_json(run_folder / f"{Path(filename).stem}_metadata.json", metadata)
     return out_path
 
 
@@ -100,10 +101,7 @@ def save_alignment_map(run_folder, x_centers, y_centers, d2_map, metadata,
             for ix, x in enumerate(x_centers):
                 f.write(f"{x:.2f},{y:.2f},{d2[iy, ix]:.6f}\n")
 
-    meta_path = run_folder / f"{basename}_metadata.json"
-    with open(meta_path, "w") as f:
-        json.dump(metadata, f, indent=2, default=str)
-
+    _write_json(run_folder / f"{basename}_metadata.json", metadata)
     return npz_path
 
 
@@ -168,9 +166,7 @@ def save_ao_result(run_folder, result, metadata, basename="ao_correction"):
         corrected_psf=result["corrected_psf"],
         phase=result["phase"],
     )
-    meta_path = run_folder / f"{basename}_metadata.json"
-    with open(meta_path, "w") as f:
-        json.dump(metadata, f, indent=2, default=str)
+    _write_json(run_folder / f"{basename}_metadata.json", metadata)
     return npz_path
 
 
@@ -206,8 +202,7 @@ def save_phase_mask(run_folder, mask, info, basename="slm_mask"):
     run_folder = Path(run_folder)
     out_path = run_folder / f"{basename}.tif"
     tifffile.imwrite(out_path, np.asarray(mask, dtype=np.uint8))
-    with open(run_folder / f"{basename}_metadata.json", "w") as f:
-        json.dump(info, f, indent=2, default=str)
+    _write_json(run_folder / f"{basename}_metadata.json", info)
     return out_path
 
 
@@ -243,12 +238,34 @@ def save_zstack_tiff(run_folder, stack, metadata, z_step_um=None, pixel_size_um=
         ij_meta["unit"] = "um"
     out_path = run_folder / filename
     tifffile.imwrite(out_path, stack, imagej=True, metadata=ij_meta, **kwargs)
-    with open(run_folder / f"{Path(filename).stem}_metadata.json", "w") as f:
-        json.dump(metadata, f, indent=2, default=str)
+    _write_json(run_folder / f"{Path(filename).stem}_metadata.json", metadata)
     return out_path
 
 
-class TimelapseRamBuffer:
+class _TimelapseWriter:
+    """
+    What TimelapseRamBuffer and TimelapseTiffStream share: a TYX ImageJ
+    stack of `num_frames` frames at `path`, filled by `write(t, frame)`
+    into `self._data` (set up by the subclass), then `close(metadata)`.
+    """
+
+    def __init__(self, run_folder, filename, num_frames, frame_shape, dtype,
+                 frame_interval_s=None):
+        self.path = Path(run_folder) / filename
+        self.num_frames = int(num_frames)
+        self.frame_shape = tuple(frame_shape)
+        self.dtype = np.dtype(dtype)
+        self._ij_metadata = {"axes": "TYX"}
+        if frame_interval_s:
+            self._ij_metadata["finterval"] = float(frame_interval_s)
+        self.frames_written = 0
+
+    def write(self, t, frame):
+        self._data[t] = frame
+        self.frames_written = max(self.frames_written, t + 1)
+
+
+class TimelapseRamBuffer(_TimelapseWriter):
     """
     Keeps a whole timelapse in RAM during the acquisition and writes the
     TIFF (ImageJ hyperstack, TYX) only once it's over, as Micro-Manager
@@ -280,22 +297,10 @@ class TimelapseRamBuffer:
 
     def __init__(self, run_folder, filename, num_frames, frame_shape, dtype,
                  frame_interval_s=None):
-        self.path = Path(run_folder) / filename
-        self.num_frames = int(num_frames)
-        self.frame_shape = tuple(frame_shape)
-        self.dtype = np.dtype(dtype)
-        self._ij_metadata = {"axes": "TYX"}
-        if frame_interval_s:
-            self._ij_metadata["finterval"] = float(frame_interval_s)
-
+        super().__init__(run_folder, filename, num_frames, frame_shape, dtype, frame_interval_s)
         self.check_fits(self.num_frames, self.frame_shape, self.dtype)
         self._data = np.empty((self.num_frames, *self.frame_shape), dtype=self.dtype)
         self._data.fill(0)   # commit the pages now, not frame by frame mid-run
-        self.frames_written = 0
-
-    def write(self, t, frame):
-        self._data[t] = frame
-        self.frames_written = max(self.frames_written, t + 1)
 
     def close(self, metadata):
         data, self._data = self._data, None
@@ -303,12 +308,11 @@ class TimelapseRamBuffer:
         if n:
             tifffile.imwrite(self.path, data[:n], imagej=True, metadata=self._ij_metadata)
         del data
-        with open(self.path.with_name(f"{self.path.stem}_metadata.json"), "w") as f:
-            json.dump(metadata, f, indent=2, default=str)
+        _write_json(self.path.with_name(f"{self.path.stem}_metadata.json"), metadata)
         return self.path
 
 
-class TimelapseTiffStream:
+class TimelapseTiffStream(_TimelapseWriter):
     """
     Streams a timelapse to disk frame by frame (a memory-mapped file the
     OS writes back in the background), for runs too long to fit in RAM -
@@ -325,22 +329,11 @@ class TimelapseTiffStream:
 
     def __init__(self, run_folder, filename, num_frames, frame_shape, dtype,
                  frame_interval_s=None):
-        self.path = Path(run_folder) / filename
-        self.num_frames = int(num_frames)
-        self.frame_shape = tuple(frame_shape)
-        self.dtype = np.dtype(dtype)
-        self._ij_metadata = {"axes": "TYX"}
-        if frame_interval_s:
-            self._ij_metadata["finterval"] = float(frame_interval_s)
+        super().__init__(run_folder, filename, num_frames, frame_shape, dtype, frame_interval_s)
         self._data = tifffile.memmap(
             self.path, shape=(self.num_frames, *self.frame_shape), dtype=self.dtype,
             imagej=True, metadata=self._ij_metadata,
         )
-        self.frames_written = 0
-
-    def write(self, t, frame):
-        self._data[t] = frame
-        self.frames_written = max(self.frames_written, t + 1)
 
     def close(self, metadata):
         data, self._data = self._data, None
@@ -356,6 +349,5 @@ class TimelapseTiffStream:
                              dtype=self.dtype, imagej=True, metadata=self._ij_metadata)
             del src
             shutil.move(tmp, self.path)
-        with open(self.path.with_name(f"{self.path.stem}_metadata.json"), "w") as f:
-            json.dump(metadata, f, indent=2, default=str)
+        _write_json(self.path.with_name(f"{self.path.stem}_metadata.json"), metadata)
         return self.path
