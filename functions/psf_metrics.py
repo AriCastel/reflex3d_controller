@@ -25,6 +25,7 @@ from "improving" the PSF by throwing light away.
 Never writes to disk.
 """
 import numpy as np
+from scipy import ndimage
 
 
 def total_power(image):
@@ -38,9 +39,8 @@ def centroid(image, threshold_fraction=0.25):
         h, w = image.shape
         return (w - 1) / 2.0, (h - 1) / 2.0
     weights = np.where(image > threshold_fraction * peak, image, 0.0)
-    yy, xx = np.indices(image.shape)
-    total = weights.sum()
-    return float((weights * xx).sum() / total), float((weights * yy).sum() / total)
+    cy, cx = ndimage.center_of_mass(weights)
+    return float(cx), float(cy)
 
 
 def _radius_map(image):

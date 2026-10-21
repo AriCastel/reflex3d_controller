@@ -27,7 +27,9 @@ from datetime import datetime
 
 import numpy as np
 
-from functions.phase_masks import flat_mask, phase_to_grey
+from core.file_io import TimelapseRamBuffer
+from functions.mmcore_camera import frame_dtype
+from functions.phase_masks import disk_bounding_box, flat_mask, phase_to_grey
 from functions.zernike import NOLL_NAMES, noll_zernike
 
 
@@ -63,8 +65,7 @@ class ZernikePupil:
 
         height, width = self.flat.shape
         cx, cy = self.center
-        x0, x1 = max(0, int(np.floor(cx - self.radius))), min(width, int(np.ceil(cx + self.radius)) + 1)
-        y0, y1 = max(0, int(np.floor(cy - self.radius))), min(height, int(np.ceil(cy + self.radius)) + 1)
+        x0, x1, y0, y1 = disk_bounding_box(cx, cy, self.radius, width, height)
         self.box = (slice(y0, y1), slice(x0, x1))
         yy, xx = np.mgrid[y0:y1, x0:x1]
         rho = np.hypot(xx - cx, yy - cy) / self.radius
@@ -74,10 +75,12 @@ class ZernikePupil:
             [np.where(self.inside, noll_zernike(j, rho, theta), 0.0) for j in self.noll_indices]
         ).astype(np.float32)
 
+    def _phase(self, coefficients):
+        return np.tensordot(np.asarray(coefficients, np.float32), self.basis, axes=1)
+
     def phase(self, coefficients):
         """Pupil-box phase map in radians (NaN outside the pupil)."""
-        phase = np.tensordot(np.asarray(coefficients, np.float32), self.basis, axes=1)
-        return np.where(self.inside, phase, np.nan)
+        return np.where(self.inside, self._phase(coefficients), np.nan)
 
     def mask(self, coefficients):
         """Full-SLM uint8 mask: flat background, Zernike phase in the pupil."""
@@ -89,7 +92,7 @@ class ZernikePupil:
         mask (in place, and returned), leaving the rest of it untouched -
         e.g. to put each channel's correction in its own pupil of one mask.
         """
-        phase = np.tensordot(np.asarray(coefficients, np.float32), self.basis, axes=1)
+        phase = self._phase(coefficients)
         region = mask[self.box]
         region[self.inside] = phase_to_grey(phase[self.inside] + self.flat_phase, self.grey_2pi)
         return mask
@@ -144,8 +147,7 @@ def acquire_dark_frame(mmc, n_frames):
         mmc.stopSequenceAcquisition()
 
     shape = (mmc.getImageHeight(), mmc.getImageWidth())
-    dtype = {1: np.uint8, 2: np.uint16, 4: np.uint32}.get(mmc.getBytesPerPixel(), np.uint16)
-    from core.file_io import TimelapseRamBuffer
+    dtype = frame_dtype(mmc)
     TimelapseRamBuffer.check_fits(n_frames, shape, dtype)
 
     frames = _FrameStack(n_frames, shape, dtype)

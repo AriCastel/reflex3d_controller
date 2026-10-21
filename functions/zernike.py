@@ -10,9 +10,8 @@ PSF-engineering work (aberration correction, EDOF mask design).
 
 Convention: ANSI/OSA ordering, Z(n, m) with m signed.
   m > 0 -> cos(m*theta),  m < 0 -> sin(|m|*theta)
-Normalization is the "unit peak-to-valley over the unit disk is not
-enforced" raw form; the alignment code rescales explicitly to a
-requested peak-to-valley phase, so raw form is the useful one here.
+`zernike` is unnormalized (the alignment code rescales to a requested
+peak-to-valley phase itself); `noll_zernike` is RMS-normalized.
 """
 from math import factorial
 

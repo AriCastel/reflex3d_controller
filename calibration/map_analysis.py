@@ -60,6 +60,20 @@ def _support_mask(d2, support_fraction):
     return filled, threshold
 
 
+def binned_radial_profile(r, values, use, edges):
+    """
+    Mean of `values[use]` in each radius bin [edges[i], edges[i + 1])
+    (NaN for an empty bin), and the bin centres.
+    """
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    prof = np.full(len(centers), np.nan)
+    for i in range(len(centers)):
+        sel = use & (r >= edges[i]) & (r < edges[i + 1])
+        if sel.any():
+            prof[i] = np.nanmean(values[sel])
+    return centers, prof
+
+
 def _ring_crest_radius(d2, XG, YG, support, cx, cy, r_support, n_bins=12):
     """
     For the defocus mode the map is a ring: zero outside, a crest at an
@@ -75,16 +89,7 @@ def _ring_crest_radius(d2, XG, YG, support, cx, cy, r_support, n_bins=12):
     if use.sum() < n_bins:
         return None
     edges = np.linspace(0.0, r_support, n_bins + 1)
-    prof, centers = [], []
-    for i in range(n_bins):
-        sel = use & (r >= edges[i]) & (r < edges[i + 1])
-        if sel.sum() == 0:
-            prof.append(np.nan)
-        else:
-            prof.append(float(np.nanmean(d2[sel])))
-        centers.append(0.5 * (edges[i] + edges[i + 1]))
-    prof = np.array(prof)
-    centers = np.array(centers)
+    centers, prof = binned_radial_profile(r, d2, use, edges)
     if np.all(~np.isfinite(prof)):
         return None
     crest = int(np.nanargmax(prof))

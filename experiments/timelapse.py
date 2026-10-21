@@ -4,7 +4,8 @@ experiments/timelapse.py
 Continuous timelapse at the current position: a given number of frames
 with no wait between them, at a given exposure (ms) and laser power (mW),
 saved as <name>.tif (ImageJ TYX stack) in a run folder
-<root_folder>/YYYYMMDD/YYYYMMDD_<name>_N/, together with <name>_metadata.json (settings, frames acquired, measured sampling rate,
+<root_folder>/YYYYMMDD/YYYYMMDD_<name>_N/, together with
+<name>_metadata.json (settings, frames acquired, measured sampling rate,
 per-frame camera timestamps, camera ROI, phase mask) and the phase mask
 itself (slm_mask.tif + slm_mask_metadata.json).
 
@@ -27,8 +28,7 @@ Two ways to run it:
   'Timelapse' panel and press Start. The mask is whichever one was last
   loaded from the 'SLM phase mask' panel; the GUI's own viewer shows the
   frames as they come in.
-* Headless (replaces example_timelapse_mda.py): set the parameters below
-  and run
+* Headless: set the parameters below and run
       python -m experiments.timelapse <name>
   This loads the hardware itself and shows PHASE_MASK for the run, with
   an optional napari window of the latest frame (PREVIEW). Closing that
@@ -37,8 +37,6 @@ Two ways to run it:
 import re
 import sys
 import time
-
-import numpy as np
 
 from core.config import load_config
 from core.file_io import TimelapseRamBuffer, TimelapseTiffStream, save_phase_mask
@@ -52,7 +50,8 @@ from functions.imaging_masks import (
     remember_shown_mask,
     shown_mask,
 )
-from functions.mmcore_slm import MMCoreSLM
+from functions.mmcore_camera import frame_dtype
+from functions.mmcore_slm import MMCoreSLM, slm_settle_seconds
 
 # ---- experiment parameters (None -> config defaults) ----
 NAME = None            # None -> first command-line argument
@@ -110,7 +109,7 @@ def main(name=None, num_frames=None, exposure_ms=None, laser_power_mW=None,
     # never changed here.
     roi = list(mmc.getROI())
     frame_shape = (mmc.getImageHeight(), mmc.getImageWidth())
-    dtype = {1: np.uint8, 2: np.uint16, 4: np.uint32}.get(mmc.getBytesPerPixel(), np.uint16)
+    dtype = frame_dtype(mmc)
     if buffer == "ram":
         TimelapseRamBuffer.check_fits(num_frames, frame_shape, dtype)  # before any folder
 
@@ -124,8 +123,7 @@ def main(name=None, num_frames=None, exposure_ms=None, laser_power_mW=None,
             with MMCoreSLM(mmc, config) as slm:
                 slm.show_mask(mask)
             remember_shown_mask(mask, info)
-            time.sleep(config.get("slm", "settle_frames", default=3)
-                       / config.get("slm", "refresh_rate_hz", default=30))
+            time.sleep(slm_settle_seconds(config))
 
     mask, info = shown_mask()
     if info is None:

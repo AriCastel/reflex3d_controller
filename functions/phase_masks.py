@@ -35,6 +35,18 @@ def phase_to_grey(phase_rad, grey_level_2pi):
     return np.mod(grey, 256).astype(np.uint8)
 
 
+def disk_bounding_box(cx, cy, radius, width, height):
+    """
+    (x0, x1, y0, y1): the pixel box around a disk, clipped to a
+    width x height image (a disk near the edge is simply truncated).
+    """
+    x0 = max(0, int(np.floor(cx - radius)))
+    x1 = min(width, int(np.ceil(cx + radius)) + 1)
+    y0 = max(0, int(np.floor(cy - radius)))
+    y1 = min(height, int(np.ceil(cy + radius)) + 1)
+    return x0, x1, y0, y1
+
+
 def zernike_patch_mask(
     config,
     center_xy,
@@ -76,14 +88,7 @@ def zernike_patch_mask(
     cx, cy = float(center_xy[0]), float(center_xy[1])
     r_patch = patch_diameter_px / 2.0
 
-    # Bounding box of the patch, clipped to the SLM (patches near the
-    # edge are simply truncated).
-    x0 = int(np.floor(cx - r_patch))
-    x1 = int(np.ceil(cx + r_patch)) + 1
-    y0 = int(np.floor(cy - r_patch))
-    y1 = int(np.ceil(cy + r_patch)) + 1
-    xs0, xs1 = max(0, x0), min(width, x1)
-    ys0, ys1 = max(0, y0), min(height, y1)
+    xs0, xs1, ys0, ys1 = disk_bounding_box(cx, cy, r_patch, width, height)
     if xs0 >= xs1 or ys0 >= ys1:
         return mask  # patch entirely off-screen
 

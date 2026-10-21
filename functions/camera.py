@@ -5,10 +5,9 @@ General-purpose camera control via the Micro-Manager core, addressed
 through pycromanager's `Core`. Never writes to disk — that's
 core/file_io.py's job.
 
-Kept for the existing MM-GUI-driven workflow. The pymmcore-plus
-equivalent (a bare CMMCorePlus instance, which already exposes
-`setExposure`/`snap` directly) is used instead by the `*_mda`
-experiments - see core/mmcore.py.
+Kept for the existing MM-GUI-driven workflow. On the pymmcore-plus
+stack, CMMCorePlus exposes `setExposure`/`snap` directly (see
+functions/mmcore_camera.py).
 """
 import numpy as np
 

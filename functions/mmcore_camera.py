@@ -9,6 +9,12 @@ hand in the Micro-Manager GUI; here it's read from
 channel always lands on the same part of the sensor. Never writes to
 disk.
 """
+import numpy as np
+
+
+def frame_dtype(mmc):
+    """numpy dtype of the camera's frames, from its bytes per pixel."""
+    return {1: np.uint8, 2: np.uint16, 4: np.uint32}.get(mmc.getBytesPerPixel(), np.uint16)
 
 
 def get_channel_roi(config, channel):

@@ -7,7 +7,7 @@ snake_case names to `setProperty` etc.). Never writes to disk —
 that's core/file_io.py's job.
 
 Kept for the existing MM-GUI-driven workflow. functions/mmcore_laser.py
-has the pymmcore-plus equivalent, used by the `*_mda` experiments.
+has the pymmcore-plus equivalent.
 """
 
 
