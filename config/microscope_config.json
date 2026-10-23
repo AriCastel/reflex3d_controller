@@ -59,6 +59,19 @@
     "settle_s": 0.5,
     "_comment": "axis_properties maps the axes as seen from the CAMERA - 'horizontal' and 'vertical' in the image, 'depth' along the objective-sample distance - to the stage property that moves along each ('Current X', 'Current Y' or 'Current Z'). The stage is sometimes re-mounted for an experiment, so check this mapping whenever it is; positions are always set through these properties (functions/mmcore_micromanipulator.py), the most reliable way to move this stage. The shipped depth = 'Current X' is what the previous setup's Z-stack script scanned; horizontal/vertical are placeholders to verify. microstep_um is the stage's smallest displacement (62.5 nm); scan steps must be whole multiples of it. settle_s is the wait after each move before snapping."
   },
+  "rotator": {
+    "device_label": "PR50CC",
+    "position_property": "X Axis",
+    "home_property": "find_home",
+    "home_command": "FIND HOME NOW",
+    "units_per_degree": 1000,
+    "min_deg": null,
+    "max_deg": null,
+    "settle_s": 0.3,
+    "coarse_step_deg": 45.0,
+    "fine_step_deg": 5.0,
+    "_comment": "The PR50CC rotation stage (functions/mmcore_rotator.py, the 'Rotator' panel of experiments/imaging_gui.py). device_label is its label in the Micro-Manager hardware config - check it in the Device Property Browser, 'PR50CC' is a guess. The stage only accepts absolute positions: position_property ('X Axis') is written in milli-degrees (units_per_degree = 1000; 90000 = 90 degrees clockwise, -90000 = counter-clockwise), and a relative rotation is the current position plus the change. It is homed by setting home_property ('find_home') to home_command ('FIND HOME NOW'), which the panel's Initialize button does. min_deg/max_deg optionally refuse moves outside a range (null = no limit). settle_s is the wait after each move. coarse_step_deg and fine_step_deg are only the panel's starting values - change them on the fly in the panel for each run."
+  },
   "slm": {
     "model": "Meadowlark Optics 8-bit LC-SLM",
     "monitor_index": 1,
