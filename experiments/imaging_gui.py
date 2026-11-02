@@ -51,6 +51,8 @@ MASK_PRESETS = {
     "Aberration correction": "aberration_correction",
     "EDOF (primary spherical)": "edof",
     "Aberration correction + EDOF": "aberration_correction_edof",
+    "EDOF (annular binary)": "annular_binary",
+    "Aberration correction + annular binary": "aberration_correction_annular_binary",
     "Flat": "flat",
 }
 

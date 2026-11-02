@@ -84,7 +84,8 @@ sys.modules["pycromanager"] = types.SimpleNamespace(Core=lambda: core)
 
 import experiments.load_phase_mask as lpm
 
-PRESETS = ["flat", "edof", "aberration_correction", "aberration_correction_edof"]
+PRESETS = ["flat", "edof", "aberration_correction", "aberration_correction_edof",
+           "annular_binary", "aberration_correction_annular_binary"]
 
 
 def run(preset=None, argv=("load_phase_mask.py",)):
@@ -94,7 +95,8 @@ def run(preset=None, argv=("load_phase_mask.py",)):
 
 
 print("missing stored correction")
-for preset in ("aberration_correction", "aberration_correction_edof"):
+for preset in ("aberration_correction", "aberration_correction_edof",
+               "aberration_correction_annular_binary"):
     core.shown = None
     try:
         run(preset); check(False, f"{preset} raises")
