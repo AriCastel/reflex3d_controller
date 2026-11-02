@@ -268,8 +268,15 @@ class SimCamera(SimpleCameraDevice):
 
 import experiments.load_phase_mask as lpm
 
-# No Micro-Manager 2.0 either: block pycromanager (only that key - patch.dict on
-# sys.modules would also drop every module imported meanwhile, e.g. Qt's).
+# The "GUI": a core in this process (UniMMCore() becomes CMMCorePlus.instance(),
+# as load_mmcore's core would). It is created before the refusal check, with
+# no SLM loaded yet, so find_slm_core finds it instead of registering a core of
+# its own - which would then stay the singleton and shadow this one.
+mmc = UniMMCore()
+
+# No SLM in the GUI's core and no Micro-Manager 2.0 either: block pycromanager
+# (only that key - patch.dict on sys.modules would also drop every module
+# imported meanwhile, e.g. Qt's).
 _saved_pycromanager = sys.modules.get("pycromanager")
 sys.modules["pycromanager"] = None
 with mock.patch.object(lpm, "load_config", lambda: config):
@@ -280,9 +287,6 @@ with mock.patch.object(lpm, "load_config", lambda: config):
         check("No Micro-Manager core with the SLM found" in str(exc),
               "load_phase_mask: refuses without a core")
 
-# The "GUI": a core in this process with the SLM loaded (UniMMCore()
-# becomes CMMCorePlus.instance(), as load_mmcore's core would).
-mmc = UniMMCore()
 slm_dev, laser = SimSLM(), SimLaser()
 mmc.loadPyDevice("Cam", SimCamera(laser)); mmc.loadPyDevice("SLM", slm_dev)
 mmc.loadPyDevice("L", laser)
