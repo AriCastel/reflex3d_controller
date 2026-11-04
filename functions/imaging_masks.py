@@ -8,10 +8,15 @@ functions/adaptive_optics.py), built from
 * the stored aberration correction (config/phase_masks.json, under
   imaging_masks.aberration_correction_method and the channel), and/or
 * the extended-depth-of-field (EDOF) terms in
-  imaging_masks.edof_zernike_rad_rms (primary spherical, Noll 11),
+  imaging_masks.edof_zernike_rad_rms (primary spherical, Noll 11), or
+* the alternative EDOF mask, an annular binary phase mask (0 / pi rings,
+  outer radii imaging_masks.annular_binary_rho as fractions of the pupil
+  radius - see functions/phase_masks.py),
 
-added together when both are used. PRESETS names the four
-combinations experiments/load_phase_mask.py and the timelapse use.
+added together when the stored correction and an EDOF mask are both
+used (the EDOF Zernike terms and the annular mask are alternatives, not
+combined with each other). PRESETS names the combinations
+experiments/load_phase_mask.py and the timelapse use.
 
 Never writes to disk.
 """
@@ -21,15 +26,23 @@ import numpy as np
 
 from core.config import load_phase_masks
 from functions.adaptive_optics import ZernikePupil
-from functions.phase_masks import flat_mask
+from functions.phase_masks import (
+    DEFAULT_ANNULAR_RHO,
+    annular_binary_phase,
+    check_annular_rho,
+    flat_mask,
+)
 from functions.zernike import NOLL_NAMES
 
-#: preset -> (use the stored aberration correction, add the EDOF terms)
+#: preset -> (use the stored aberration correction, add the EDOF Zernike
+#: terms, add the annular binary mask)
 PRESETS = {
-    "flat": (False, False),
-    "aberration_correction": (True, False),
-    "edof": (False, True),
-    "aberration_correction_edof": (True, True),
+    "flat": (False, False, False),
+    "aberration_correction": (True, False, False),
+    "edof": (False, True, False),
+    "aberration_correction_edof": (True, True, False),
+    "annular_binary": (False, False, True),
+    "aberration_correction_annular_binary": (True, False, True),
 }
 
 
@@ -60,13 +73,15 @@ def build_imaging_mask(config, preset, channels=None, phase_masks=None):
     """
     if preset not in PRESETS:
         raise ValueError(f"Unknown phase-mask preset '{preset}'; choose one of {list(PRESETS)}")
-    use_correction, use_edof = PRESETS[preset]
+    use_correction, use_edof, use_annular = PRESETS[preset]
     settings = config.get("imaging_masks", default={})
     if channels is None:
         channels = settings.get("channels", ["left", "right"])
     method = settings.get("aberration_correction_method", "spsa")
     edof = {int(j): float(c) for j, c in settings.get("edof_zernike_rad_rms", {}).items()} \
         if use_edof else {}
+    annular = check_annular_rho(
+        settings.get("annular_binary_rho", DEFAULT_ANNULAR_RHO)) if use_annular else None
     if use_correction and phase_masks is None:
         phase_masks = load_phase_masks(config)
 
@@ -93,16 +108,18 @@ def build_imaging_mask(config, preset, channels=None, phase_masks=None):
             "zernike_rad_rms": {str(j): terms[j] for j in sorted(terms)},
             "aberration_correction": source,
             "edof_zernike_rad_rms": {str(j): c for j, c in edof.items()},
+            "annular_binary_rho": list(annular) if annular else None,
         }
 
     mask = flat_mask(config)
     pupils = []
     for channel, terms in terms_by_channel.items():
-        if not terms:
+        if not terms and not annular:
             continue
         noll = sorted(terms)
         pupil = ZernikePupil(config, channel, noll)
-        pupil.paint(mask, [terms[j] for j in noll])
+        pupil.paint(mask, [terms[j] for j in noll],
+                    extra_phase=annular_binary_phase(pupil.rho, annular) if annular else None)
         info["channels"][channel]["pupil_center_px"] = list(pupil.center)
         info["channels"][channel]["pupil_radius_px"] = pupil.radius
         pupils.append(pupil)
@@ -121,7 +138,7 @@ def describe_imaging_mask(info):
     """Human-readable summary of `build_imaging_mask`'s info dict."""
     lines = [f"Phase mask '{info['preset']}':"]
     for channel, ch in info["channels"].items():
-        if not ch["zernike_rad_rms"]:
+        if not ch["zernike_rad_rms"] and not ch["annular_binary_rho"]:
             lines.append(f"  {channel}: flat")
             continue
         src = ch["aberration_correction"]
@@ -132,6 +149,9 @@ def describe_imaging_mask(info):
                          + (f" ({src['run']})" if src.get("run") else ""))
         if ch["edof_zernike_rad_rms"]:
             lines.append(f"  {channel}: + EDOF {ch['edof_zernike_rad_rms']}")
+        if ch["annular_binary_rho"]:
+            lines.append(f"  {channel}: + annular binary phase mask, ring outer radii "
+                         f"{ch['annular_binary_rho']} x pupil radius")
         for j, c in ch["zernike_rad_rms"].items():
             lines.append(f"    Noll {j:>2} {NOLL_NAMES.get(int(j), ''):<32} {c:+.4f} rad RMS")
     lines += [f"  WARNING: {w}" for w in info["warnings"]]

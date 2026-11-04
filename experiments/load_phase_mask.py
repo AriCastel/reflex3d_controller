@@ -10,6 +10,11 @@ presets, on both channels' pupils (imaging_masks.channels):
     edof                        primary spherical (Noll 11) only, amplitude in
                                 imaging_masks.edof_zernike_rad_rms
     aberration_correction_edof  both, added term by term
+    annular_binary              alternative EDOF mask: concentric 0 / pi rings, outer
+                                radii (fractions of the pupil radius) in
+                                imaging_masks.annular_binary_rho, default [0.76, 0.93]
+    aberration_correction_annular_binary
+                                the stored correction plus the annular binary mask
 
 Load it after positioning the sample and before starting the acquisition.
 The mask stays on the SLM until another one is loaded. Nothing is

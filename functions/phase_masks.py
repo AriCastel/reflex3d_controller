@@ -35,6 +35,41 @@ def phase_to_grey(phase_rad, grey_level_2pi):
     return np.mod(grey, 256).astype(np.uint8)
 
 
+#: Outer ring radii (fractions of the pupil radius) of the default annular binary mask.
+DEFAULT_ANNULAR_RHO = (0.76, 0.93)
+
+
+def check_annular_rho(rho):
+    """
+    `rho` as a tuple of floats, or a ValueError unless it is a non-empty,
+    strictly increasing vector of ring outer radii, each between 0 and 1
+    (exclusive) of the pupil radius.
+    """
+    try:
+        edges = tuple(float(r) for r in rho)
+    except (TypeError, ValueError):
+        raise ValueError(f"annular binary rho must be a list of ring radii, got {rho!r}") from None
+    if not edges or not all(0.0 < r < 1.0 for r in edges) \
+            or any(b <= a for a, b in zip(edges, edges[1:])):
+        raise ValueError(
+            f"annular binary rho must be strictly increasing outer ring radii, each "
+            f"between 0 and 1 (fractions of the pupil radius), got {rho!r}"
+        )
+    return edges
+
+
+def annular_binary_phase(rho, rho_edges):
+    """
+    Phase (rad) of an annular binary phase mask at normalized pupil radii
+    `rho` (an array, 1 at the pupil edge): 0 in the centre, pi in the next
+    ring, 0 in the one after, and so on. rho_edges[n] is the outer radius
+    of ring n; the last ring extends to the pupil edge, so len(rho_edges)
+    edges make len(rho_edges) + 1 rings.
+    """
+    edges = check_annular_rho(rho_edges)
+    return np.pi * (np.searchsorted(edges, rho, side="right") % 2)
+
+
 def disk_bounding_box(cx, cy, radius, width, height):
     """
     (x0, x1, y0, y1): the pixel box around a disk, clipped to a

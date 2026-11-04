@@ -49,7 +49,7 @@ functions/psf_metrics.py         Guide-star PSF metrics for AO (pluggable regist
 functions/adaptive_optics.py     Pupil Zernike masks, guide-star camera, SPSA optimizer,
                                   results figure
 functions/imaging_masks.py       Imaging phase masks per channel (stored correction,
-                                  EDOF, both, flat), the mask currently shown
+                                  EDOF, annular binary, flat), the mask currently shown
 functions/mmcore_rotator.py      PR50CC rotation stage: initialize, rotate by / to an angle
 functions/phase_masks.py         Flat masks, Zernike probe patches, raster positions
 functions/localization.py        Point-source centroid localization
@@ -65,7 +65,7 @@ experiments/                     Minimal scripts: parameters + function calls on
   imaging_gui.py                   napari-micromanager GUI + 'SLM phase mask', 'Timelapse'
                                     and 'Rotator' panels
   load_phase_mask.py               Load a mask preset onto the SLM (stored correction,
-                                    EDOF, both, flat), from the napari GUI or with
+                                    EDOF, annular binary, flat), from the napari GUI or with
                                     Micro-Manager 2.0
 calibration/                     Infrequent, complex routines
   fourier_alignment.py             Fourier-plane alignment acquisition
@@ -352,8 +352,10 @@ Noll index), and the coefficients are printed.
 Each channel's pupil on the SLM gets a sum of Zernike modes (same
 convention as the AO: Noll order, rad RMS), from the stored aberration
 correction and/or the extended-depth-of-field (EDOF) terms in the
-`imaging_masks` config section (primary spherical, Noll 11).
-`experiments/load_phase_mask.py` loads one of four presets onto both
+`imaging_masks` config section (primary spherical, Noll 11). The
+alternative EDOF mask is an annular binary phase mask (below), which
+can be used on its own or added to the stored correction.
+`experiments/load_phase_mask.py` loads one of six presets onto both
 channels (`imaging_masks.channels`), given as its argument:
 
 | preset | mask |
@@ -361,6 +363,8 @@ channels (`imaging_masks.channels`), given as its argument:
 | `aberration_correction` | stored correction (`imaging_masks.aberration_correction_method`, `spsa`) |
 | `edof` | primary spherical only (`imaging_masks.edof_zernike_rad_rms`) |
 | `aberration_correction_edof` | both, added term by term (the correction's own Noll 11 plus the EDOF amount) |
+| `annular_binary` | alternative EDOF: concentric 0 / pi rings (`imaging_masks.annular_binary_rho`) |
+| `aberration_correction_annular_binary` | the stored correction's Zernike phase plus the 0 / pi rings |
 | `flat` | completely flat |
 
 The same script works with the napari GUI and with Micro-Manager 2.0:
@@ -398,6 +402,8 @@ Micro-Manager is open:
 python -m experiments.load_phase_mask aberration_correction
 python -m experiments.load_phase_mask edof
 python -m experiments.load_phase_mask aberration_correction_edof
+python -m experiments.load_phase_mask annular_binary
+python -m experiments.load_phase_mask aberration_correction_annular_binary
 python -m experiments.load_phase_mask flat
 ```
 
@@ -409,7 +415,7 @@ pycro-manager server on port 4827") and the Generic SLM device in its
 hardware config, at `slm.resolution`. Nothing is written to disk.
 
 **Headless timelapse.** `experiments/timelapse.py` takes `PHASE_MASK`
-(one of the four presets, default `"flat"`) at the top. The mask is
+(one of the six presets, default `"flat"`) at the top. The mask is
 built before any hardware is touched (so a missing correction stops the
 run before it starts), shown for the whole acquisition, and saved into
 the run folder.
@@ -419,6 +425,21 @@ Noll 11, ~1 wave peak-to-valley) is a starting point to tune on the
 instrument; its sign sets which side of focus the depth of field
 extends towards. Being an RMS-normalized Zernike term, it has no
 defocus component, so the best focus stays put.
+
+**Annular binary phase mask.** An alternative EDOF mask made of
+concentric rings, each of constant phase, alternating 0 and pi from the
+centre (0 first). It is defined by a vector `rho` (config:
+`imaging_masks.annular_binary_rho`, default `[0.76, 0.93]`), where
+`rho[n]` is the outer radius of ring `n` as a fraction of the Fourier-plane
+radius (`fourier_plane.radius_px`); the last ring extends to the pupil
+edge. `[0.25, 0.5, 0.75]` is four rings: 0 up to 0.25 of the radius, pi from
+0.25 to 0.5, 0 from 0.5 to 0.75 and pi from 0.75 to the edge; the default
+is three rings (0 up to 0.76, pi from 0.76 to 0.93, 0 from 0.93 to the
+edge). `rho` must be strictly increasing and between 0 and 1, otherwise
+the mask isn't built (before the SLM is touched). The pi step is set
+through `slm.grey_level_2pi`, like every phase in the codebase. It is an
+alternative to the Zernike EDOF terms and isn't combined with them; the
+mask info saved with each acquisition records the `rho` used.
 
 
 ## 3D PSF characterization

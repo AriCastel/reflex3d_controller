@@ -60,6 +60,7 @@ EXPOSURE_MS = None     # None -> acquisition_defaults.timelapse.exposure_ms
 LASER_POWER_MW = None  # None -> laser.default_power_mW
 # Headless only:
 PHASE_MASK = "flat"    # "flat", "aberration_correction", "edof", "aberration_correction_edof",
+                       # "annular_binary", "aberration_correction_annular_binary",
                        # or None to leave the SLM as it is
 PREVIEW = True         # napari window with the latest frame
 # Both:

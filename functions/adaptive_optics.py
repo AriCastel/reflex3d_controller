@@ -70,10 +70,11 @@ class ZernikePupil:
         yy, xx = np.mgrid[y0:y1, x0:x1]
         rho = np.hypot(xx - cx, yy - cy) / self.radius
         theta = np.arctan2(yy - cy, xx - cx)
+        self.rho = rho
         self.inside = rho <= 1.0
-        self.basis = np.stack(
-            [np.where(self.inside, noll_zernike(j, rho, theta), 0.0) for j in self.noll_indices]
-        ).astype(np.float32)
+        self.basis = np.zeros((len(self.noll_indices), *rho.shape), np.float32)
+        for k, j in enumerate(self.noll_indices):
+            self.basis[k] = np.where(self.inside, noll_zernike(j, rho, theta), 0.0)
 
     def _phase(self, coefficients):
         return np.tensordot(np.asarray(coefficients, np.float32), self.basis, axes=1)
@@ -86,13 +87,17 @@ class ZernikePupil:
         """Full-SLM uint8 mask: flat background, Zernike phase in the pupil."""
         return self.paint(self.flat.copy(), coefficients)
 
-    def paint(self, mask, coefficients):
+    def paint(self, mask, coefficients, extra_phase=None):
         """
         Write the Zernike phase into this pupil of an existing full-SLM
         mask (in place, and returned), leaving the rest of it untouched -
         e.g. to put each channel's correction in its own pupil of one mask.
+        `extra_phase` (radians, shaped like the pupil box, e.g.
+        phase_masks.annular_binary_phase(pupil.rho, ...)) is added to it.
         """
         phase = self._phase(coefficients)
+        if extra_phase is not None:
+            phase = phase + extra_phase
         region = mask[self.box]
         region[self.inside] = phase_to_grey(phase[self.inside] + self.flat_phase, self.grey_2pi)
         return mask
