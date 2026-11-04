@@ -60,14 +60,14 @@
     "_comment": "axis_properties maps the axes as seen from the CAMERA - 'horizontal' and 'vertical' in the image, 'depth' along the objective-sample distance - to the stage property that moves along each ('Current X', 'Current Y' or 'Current Z'). The stage is sometimes re-mounted for an experiment, so check this mapping whenever it is; positions are always set through these properties (functions/mmcore_micromanipulator.py), the most reliable way to move this stage. The shipped depth = 'Current X' is what the previous setup's Z-stack script scanned; horizontal/vertical are placeholders to verify. microstep_um is the stage's smallest displacement (62.5 nm); scan steps must be whole multiples of it. settle_s is the wait after each move before snapping."
   },
   "rotator": {
-    "device_label": "PR50CC",
-    "position_property": "X Axis",
-    "home_property": "find_home",
-    "home_command": "FIND HOME NOW",
+    "device_label": "XAxis",
+    "position_property": "Position",
+    "home_property": "SearchForHome",
+    "home_command": "Search for HOME position now",
     "units_per_degree": 1000,
     "min_deg": null,
     "max_deg": null,
-    "settle_s": 0.3,
+    "settle_s": 2,
     "coarse_step_deg": 45.0,
     "fine_step_deg": 5.0,
     "_comment": "The PR50CC rotation stage (functions/mmcore_rotator.py, the 'Rotator' panel of experiments/imaging_gui.py). device_label is its label in the Micro-Manager hardware config - check it in the Device Property Browser, 'PR50CC' is a guess. The stage only accepts absolute positions: position_property ('X Axis') is written in milli-degrees (units_per_degree = 1000; 90000 = 90 degrees clockwise, -90000 = counter-clockwise), and a relative rotation is the current position plus the change. It is homed by setting home_property ('find_home') to home_command ('FIND HOME NOW'), which the panel's Initialize button does. min_deg/max_deg optionally refuse moves outside a range (null = no limit). settle_s is the wait after each move. coarse_step_deg and fine_step_deg are only the panel's starting values - change them on the fly in the panel for each run."
@@ -96,22 +96,22 @@
     "channels": {
       "left": {
         "center_px": [
-          550.2951508436878,
-          531.2284934646849
+          544.7461420797279,
+          518.4341732197788
         ],
-        "calibrated_on": "2026-10-08 18:32:59",
+        "calibrated_on": "2026-10-23 17:12:34",
         "calibration_mode": "tilt_x",
-        "calibration_run": "C:\\Datos\\Alex_Castelblancov\\20261008\\20261008_fourier_plane_alignment_3",
+        "calibration_run": "C:\\Datos\\Alex_Castelblancov\\20261023\\20261023_fourier_plane_refinement_3",
         "_comment": "Polarization channel imaged onto the LEFT half of the camera sensor."
       },
       "right": {
         "center_px": [
-          1440.7478842425514,
-          451.25678735120187
+          1437.2286391967536,
+          448.270938976828
         ],
-        "calibrated_on": "2026-10-15 16:24:59",
+        "calibrated_on": "2026-10-23 17:07:05",
         "calibration_mode": "tilt_x",
-        "calibration_run": "C:\\Datos\\Alex_Castelblancov\\20261015\\20261015_fourier_plane_refinement_3",
+        "calibration_run": "C:\\Datos\\Alex_Castelblancov\\20261023\\20261023_fourier_plane_refinement_2",
         "_comment": "Polarization channel imaged onto the RIGHT half of the camera sensor."
       }
     },
@@ -189,16 +189,16 @@
     ],
     "aberration_correction_method": "spsa",
     "edof_zernike_rad_rms": {
-      "11": 2.0
+      "11": 1.25
     },
     "_comment": "Phase masks for imaging (functions/imaging_masks.py), used by experiments/load_phase_mask.py (from the napari GUI, experiments/imaging_gui.py, or a terminal with Micro-Manager 2.0) and by experiments/timelapse.py (headless: its PHASE_MASK). channels are the pupils that get a mask. aberration_correction_method picks which stored correction in config/phase_masks.json is used (coefficients are stored per method and channel; 'spsa' is the stochastic-gradient-descent correction from experiments/aberration_correction.py). edof_zernike_rad_rms is the extended-depth-of-field mask, Noll index -> rad RMS (same RMS-normalized Zernike convention as the correction): primary spherical, Noll 11, whose peak-to-valley is ~3.35x the coefficient, so 2.0 rad RMS is ~6.7 rad (~1 wave) - a starting point to tune on the instrument; the sign sets which side of focus the depth of field extends towards. With aberration correction + EDOF the two are added term by term on each channel."
   },
   "psf_characterization": {
-    "half_range_um": 3.0,
+    "half_range_um": 5.0,
     "step_um": 0.125,
     "overshoot_steps": 2,
-    "exposure_ms": 50,
-    "laser_power_mW": 50.0,
+    "exposure_ms": 100,
+    "laser_power_mW": 200.0,
     "guide_star_roi_px": 128,
     "dark_frames": 200,
     "_comment": "3D PSF characterization (experiments/psf_characterization.py): a depth stack of the guide star from +half_range_um to -half_range_um around its starting depth, in steps of step_um (a whole number of micromanipulator.microstep_um microsteps; 0.125 um = 2). Because of mechanical backlash the stage first overshoots overshoot_steps steps ABOVE the top of the range, comes back down to it, and then only moves down during the scan. guide_star_roi_px is the side of the square camera crop around the guide star - large enough for the most defocused PSF (null = keep the whole channel ROI). dark_frames laser-off frames are averaged and subtracted from the stack."

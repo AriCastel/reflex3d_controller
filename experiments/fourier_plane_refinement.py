@@ -73,13 +73,13 @@ from calibration.map_preview import build_refinement_figure
 from functions.phase_masks import local_raster_positions
 
 # ---- experiment parameters (override the config defaults here) ----
-REFINE_FACTOR = 2          # fine step = coarse step_px / REFINE_FACTOR
+REFINE_FACTOR = 1.5         # fine step = coarse step_px / REFINE_FACTOR
 STEP_PX = None             # None -> fourier_alignment.step_px / REFINE_FACTOR
 WINDOW_RADIUS_PX = None    # None -> fourier_plane.radius_px (the pupil radius)
 PATCH_DIAMETER_PX = None   # None -> use config (keep equal to the coarse run)
 AMPLITUDE_RAD = None       # None -> use the per-mode config default
-EXPOSURE_MS = None         # None -> use config
-LASER_POWER_MW = None      # None -> use config
+EXPOSURE_MS = 75         # None -> use config
+LASER_POWER_MW = 200      # None -> use config
 
 PROBE_MODES = ["tilt_x", "tilt_y", "defocus"]
 
