@@ -189,7 +189,7 @@
     ],
     "aberration_correction_method": "spsa",
     "edof_zernike_rad_rms": {
-      "11": 1.25
+      "11": 1
     },
     "annular_binary_rho": [
       0.76,
