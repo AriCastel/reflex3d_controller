@@ -10,8 +10,8 @@ napari viewers for the pymmcore-plus stack:
   an acquisition.
 * `show_verification_frame` shows one snapped frame with the localized
   point source marked.
-* `add_script_panel` docks a panel of buttons that run scripts inside
-  the GUI's process (e.g. experiments/load_phase_mask.py).
+* `add_phase_mask_panel` docks the SLM phase-mask chooser: the list of
+  masks, an aberration-correction toggle and a load button.
 * `add_timelapse_panel` docks the simplified timelapse form (name,
   exposure, laser power, frames, with the resulting sampling rate).
 
@@ -117,40 +117,104 @@ def show_verification_frame(frame, loc, title="Point-source verification"):
     napari.run()
 
 
-def add_script_panel(viewer, title, actions):
+def add_phase_mask_panel(viewer, masks, load, current=None, title="SLM phase mask"):
     """
-    Dock a panel with one button per entry of `actions` (label ->
-    callable, run on the Qt main thread when clicked). A failing action
-    shows a napari error notification instead of taking the GUI down,
-    and the panel's status line shows the last action and its outcome.
-    Returns the panel widget.
+    Dock the phase-mask chooser: a list of the available masks, an
+    'Aberration correction' toggle and a 'Load into SLM' button.
+
+    `masks()` returns {name: (label, description)} in list order; it is
+    called again by the 'Refresh list' button, so masks added to the
+    library while the GUI runs show up without restarting. 'Load into
+    SLM' calls `load(name, aberration_correction)` on the Qt main thread
+    with the selected mask's name and the toggle's state; it may return a
+    short text naming what is now on the SLM, shown in the panel (None =
+    the mask's label). A
+    failing load shows a napari error notification instead of taking the
+    GUI down, and the panel keeps saying what was on the SLM before.
+    `current` is that text for the mask already on the SLM when the panel
+    is created. Returns the panel widget.
     """
     from napari.utils.notifications import show_error, show_info
-    from qtpy.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
+    from qtpy.QtCore import Qt
+    from qtpy.QtWidgets import (
+        QCheckBox, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton,
+        QVBoxLayout, QWidget,
+    )
 
     panel = QWidget()
     layout = QVBoxLayout(panel)
+    mask_list = QListWidget()
+    mask_list.setToolTip("Built-in masks, then the mask library (config/mask_library/).")
+    correction = QCheckBox("Aberration correction")
+    correction.setToolTip("Add the stored aberration correction (config/phase_masks.json) "
+                          "to the selected mask. With 'Flat', the correction alone.")
+    load_button = QPushButton("Load into SLM")
+    refresh_button = QPushButton("Refresh list")
+    refresh_button.setToolTip("Re-read the mask library folder.")
+    on_slm = QLabel()
+    on_slm.setWordWrap(True)
     status = QLabel("")
     status.setWordWrap(True)
 
-    for label, action in actions.items():
-        button = QPushButton(label)
+    def _show_current(text):
+        on_slm.setText(f"On the SLM: <b>{text}</b>" if text else "On the SLM: ?")
 
-        def _run(_checked=False, label=label, action=action):
-            try:
-                action()
-            except Exception as exc:
-                status.setText(f"FAILED: {label}")
-                show_error(f"{label} failed: {exc}")
-            else:
-                status.setText(f"Last: {label}")
-                show_info(f"{label}: done")
+    def _selected():
+        item = mask_list.currentItem()
+        return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
 
-        button.clicked.connect(_run)
-        layout.addWidget(button)
+    def _refresh(_checked=False):
+        keep = _selected()
+        mask_list.clear()
+        try:
+            available = masks()
+        except Exception as exc:
+            status.setText(f"FAILED to list the masks: {exc}")
+            show_error(f"Listing the phase masks failed: {exc}")
+            available = {}
+        for name, (label, description) in available.items():
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, name)
+            item.setToolTip(f"{name}\n{description}" if description else name)
+            mask_list.addItem(item)
+            if name == keep:
+                mask_list.setCurrentItem(item)
+        if mask_list.currentItem() is None and mask_list.count():
+            mask_list.setCurrentRow(0)
+        load_button.setEnabled(mask_list.count() > 0)
 
+    def _load(_checked=False):
+        name = _selected()
+        if name is None:
+            status.setText("Select a mask first.")
+            return
+        label = mask_list.currentItem().text() + (
+            " + aberration correction" if correction.isChecked() else "")
+        try:
+            shown = load(name, correction.isChecked())
+        except (Exception, SystemExit) as exc:
+            status.setText(f"FAILED: {label}")
+            show_error(f"Loading '{label}' failed: {exc}")
+        else:
+            _show_current(shown or label)
+            status.setText("")
+            show_info(f"{label}: on the SLM")
+
+    load_button.clicked.connect(_load)
+    refresh_button.clicked.connect(_refresh)
+    layout.addWidget(mask_list)
+    layout.addWidget(correction)
+    buttons = QHBoxLayout()
+    buttons.addWidget(load_button, stretch=2)
+    buttons.addWidget(refresh_button, stretch=1)
+    layout.addLayout(buttons)
+    layout.addWidget(on_slm)
     layout.addWidget(status)
-    panel.setMaximumHeight(panel.sizeHint().height() + 40)  # leave the rest to other docks
+    _refresh()
+    _show_current(current)
+
+    # Tall enough for a handful of masks; the list scrolls beyond that.
+    mask_list.setMinimumHeight(6 * max(mask_list.sizeHintForRow(0), 18))
     viewer.window.add_dock_widget(panel, name=title, area="right")
     return panel
 

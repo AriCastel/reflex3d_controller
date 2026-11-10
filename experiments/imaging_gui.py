@@ -5,8 +5,10 @@ Opens the napari GUI for imaging: napari-micromanager on the hardware
 config from config/microscope_config.json (pymmcore_plus section), with
 a flat mask on the SLM, plus these panels:
 
-* 'SLM phase mask': buttons that run experiments/load_phase_mask.py with
-  each preset inside this process;
+* 'SLM phase mask': the list of available masks (the built-in ones and
+  the library, config/mask_library/), an 'Aberration correction' toggle
+  and a 'Load into SLM' button, which runs experiments/load_phase_mask.py
+  inside this process;
 * 'Timelapse': name, exposure (ms), laser power (mW) and number of frames
   (with the resulting sampling rate), which runs experiments/timelapse.py
   - a continuous timelapse at the current position, saved under the
@@ -18,10 +20,12 @@ a flat mask on the SLM, plus these panels:
 Workflow:
 1. Position the sample and set exposure, laser power etc. with the
    napari-micromanager widgets (live view, property browser).
-2. Load the phase mask for the acquisition with a button in the
-   'SLM phase mask' panel (or `%run experiments/load_phase_mask.py <preset>`
-   in napari's console - same thing). Loading writes nothing to disk;
-   the timelapse saves the mask it ran with in its own folder.
+2. Load the phase mask for the acquisition from the 'SLM phase mask'
+   panel: pick it in the list, tick 'Aberration correction' to add the
+   stored correction to it, and press 'Load into SLM' (or
+   `%run experiments/load_phase_mask.py <mask> [-a]` in napari's console
+   - same thing). Loading writes nothing to disk; the timelapse saves
+   the mask it ran with in its own folder.
 3. Fill in the 'Timelapse' panel and press Start (Stop ends it early,
    keeping the frames so far). The frames show up in the viewer as they
    come in, and the panel reports where they were saved and the measured
@@ -42,19 +46,13 @@ from core.mmcore import load_mmcore
 from experiments import load_phase_mask, timelapse
 from functions.mmcore_laser import laser_off_mmcore
 from functions.mmcore_slm import MMCoreSLM
-from functions.imaging_masks import build_imaging_mask, remember_shown_mask
+from functions.imaging_masks import available_masks, build_imaging_mask, remember_shown_mask
 from functions.mmcore_rotator import Rotator
-from functions.napari_preview import add_rotator_panel, add_script_panel, add_timelapse_panel
-
-# ---- parameters: panel button label -> load_phase_mask preset ----
-MASK_PRESETS = {
-    "Aberration correction": "aberration_correction",
-    "EDOF (primary spherical)": "edof",
-    "Aberration correction + EDOF": "aberration_correction_edof",
-    "EDOF (annular binary)": "annular_binary",
-    "Aberration correction + annular binary": "aberration_correction_annular_binary",
-    "Flat": "flat",
-}
+from functions.napari_preview import (
+    add_phase_mask_panel,
+    add_rotator_panel,
+    add_timelapse_panel,
+)
 
 
 def main():
@@ -83,10 +81,13 @@ def main():
         # drive CMMCorePlus.instance() - the core load_mmcore returned.
         window = MainWindow(viewer)
     viewer.window.add_dock_widget(window, name="MicroManager", area="top")
-    add_script_panel(viewer, "SLM phase mask", {
-        label: (lambda preset=preset: load_phase_mask.main(preset))
-        for label, preset in MASK_PRESETS.items()
-    })
+    add_phase_mask_panel(
+        viewer,
+        masks=lambda: {name: (m["label"], m["description"])
+                       for name, m in available_masks(config).items()},
+        load=lambda name, correction: load_phase_mask.main(name, correction) and None,
+        current="Flat (no mask)",
+    )
 
     def start_timelapse(name, exposure_ms, laser_power_mW, num_frames, done):
         def finished(summary):

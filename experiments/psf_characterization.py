@@ -4,7 +4,8 @@ experiments/psf_characterization.py
 3D PSF characterization: a depth (Z) stack of a guide star (an isolated
 microsphere), taken by stepping the micromanipulator the sample is
 mounted on along the camera's depth axis, with a chosen phase mask on
-the SLM (functions/imaging_masks.py presets; flat by default).
+the SLM (functions/imaging_masks.py presets, library masks included;
+flat by default).
 
 Acknowledgement: Luis Bastidas was the first to work out how to drive
 our Sutter MPC micromanipulator and wrote the original Z-stack script
@@ -54,7 +55,7 @@ from calibration.fourier_alignment import (
     verify_point_source,
 )
 from functions.adaptive_optics import acquire_dark_frame, set_guide_star_roi
-from functions.imaging_masks import PRESETS, build_imaging_mask, describe_imaging_mask
+from functions.imaging_masks import build_imaging_mask, describe_imaging_mask, presets
 from functions.mmcore_camera import set_channel_roi
 from functions.mmcore_laser import laser_off_mmcore, laser_on_mmcore, set_laser_power_mmcore
 from functions.mmcore_micromanipulator import Micromanipulator, approach, scan, scan_positions
@@ -161,7 +162,7 @@ def _acquire(mmc, config, pc, slm, stage, logger, half_range, step, exposure_ms,
     # --- Step 3: phase mask ---
     while True:
         preset = prompt_choice("Phase mask for the stack (Enter = flat)?",
-                               list(PRESETS), default=DEFAULT_PHASE_MASK)
+                               presets(config), default=DEFAULT_PHASE_MASK)
         try:
             mask, mask_info = build_imaging_mask(config, preset)
             break

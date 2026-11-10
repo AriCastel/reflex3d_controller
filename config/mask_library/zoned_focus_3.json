@@ -1,0 +1,66 @@
+{
+  "format": "reflex3d_phase_mask",
+  "version": 1,
+  "name": "zoned_focus_3",
+  "label": "Zoned focus, 3 zones",
+  "description": "zoned_focus: radii=(0.4812, 0.813), depths_nm=(164.7, -1592, 2351), pistons_waves=(0, 1.748, 0.8411). Phase 2 optimum: soft-min EE400 0.212, EE floor 0.174, min Strehl 0.038 over |z| <= 3 um.",
+  "phase_units": "waves",
+  "optical_system": {
+    "na": 1.1,
+    "n_medium": 1.33,
+    "wavelength_nm": 525.0
+  },
+  "parametric": {
+    "type": "zoned_focus",
+    "radii": [
+      0.4811989816520288,
+      0.8129625386563315
+    ],
+    "depths_nm": [
+      164.747098340069,
+      -1591.8418758036146,
+      2350.773303044336
+    ],
+    "pistons_waves": [
+      0.0,
+      1.7484866874615639,
+      0.8411408574687491
+    ],
+    "sweeps_nm": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "raster": {
+    "file": "zoned_focus_3.npy",
+    "pixels": 1024
+  },
+  "source": {
+    "psfsim_mask": "zoned_focus",
+    "repository": "PhaseMaskOptimization",
+    "results": "docs/phase2/results.json",
+    "configuration": "zoned_focus_3",
+    "x": [
+      0.3902310261626355,
+      0.8369895277141207,
+      0.8413669001838968,
+      164.747098340069,
+      -1591.8418758036146,
+      2350.773303044336,
+      1.7484866874615639,
+      0.8411408574687491
+    ],
+    "metrics": {
+      "ee_softmin": 0.21151231663082648,
+      "ee_min": 0.17402811881826794,
+      "ee_mean": 0.2223649984241729,
+      "eta": 0.7751342698126311,
+      "strehl_min": 0.03784808533367056,
+      "ee50_max_core_nm": 1682.789445212869,
+      "crlb_max_nm": 10.732081166390692,
+      "crlb_max_highbg_nm": 19.930751363335087,
+      "feasible": true
+    }
+  }
+}
