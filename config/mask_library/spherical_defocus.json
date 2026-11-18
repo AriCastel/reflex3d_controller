@@ -1,0 +1,53 @@
+{
+  "format": "reflex3d_phase_mask",
+  "version": 1,
+  "name": "spherical_defocus",
+  "label": "Spherical + defocus (optimised)",
+  "description": "zernike: coefficients={4: 0.3715, 11: 0.2924}. Phase 2 optimum: soft-min EE400 0.167, EE floor 0.130, min Strehl 0.030 over |z| <= 3 um.",
+  "phase_units": "waves",
+  "optical_system": {
+    "na": 1.1,
+    "n_medium": 1.33,
+    "wavelength_nm": 525.0
+  },
+  "parametric": {
+    "type": "zernike",
+    "modes": [
+      {
+        "n": 2,
+        "m": 0,
+        "waves_rms": 0.37154352016058834
+      },
+      {
+        "n": 4,
+        "m": 0,
+        "waves_rms": 0.2924386302505797
+      }
+    ]
+  },
+  "raster": {
+    "file": "spherical_defocus.npy",
+    "pixels": 1024
+  },
+  "source": {
+    "psfsim_mask": "zernike",
+    "repository": "PhaseMaskOptimization",
+    "results": "docs/phase2/results.json",
+    "configuration": "spherical+defocus",
+    "x": [
+      0.37154352016058834,
+      0.2924386302505797
+    ],
+    "metrics": {
+      "ee_softmin": 0.1667530382962444,
+      "ee_min": 0.13005982681193978,
+      "ee_mean": 0.2206244054124334,
+      "eta": 0.7833844046190686,
+      "strehl_min": 0.030095371761114625,
+      "ee50_max_core_nm": 2311.3844642585973,
+      "crlb_max_nm": 24.069265898058873,
+      "crlb_max_highbg_nm": 52.470767434590456,
+      "feasible": true
+    }
+  }
+}

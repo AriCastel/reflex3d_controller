@@ -21,6 +21,8 @@ graphics" device), through `CMMCorePlus`.
 config/microscope_config.json   All hardware/software properties in one place
 config/phase_masks.json         Stored phase-mask coefficients (AO corrections),
                                  by method then channel
+config/mask_library/            Designed phase masks, one <name>.json (+ optional
+                                 <name>.npy matrix) each; listed in the GUI
 core/                            General infrastructure — never experiment-specific
   config.py                        Loads microscope_config.json
   session.py                       Creates the run folder for each experiment
@@ -43,13 +45,15 @@ functions/                       General-purpose hardware control + orchestratio
                                     and start_continuous_timelapse (pymmcore-plus MDA)
   napari_preview.py                napari viewers and panels: live full-frame preview
                                     with channel ROI boxes, verification frame,
-                                    latest-frame preview, script buttons, timelapse form
+                                    latest-frame preview, phase-mask chooser, timelapse form
 functions/zernike.py             Zernike polynomials (incl. Noll-indexed, RMS-normalized)
 functions/psf_metrics.py         Guide-star PSF metrics for AO (pluggable registry)
 functions/adaptive_optics.py     Pupil Zernike masks, guide-star camera, SPSA optimizer,
                                   results figure
-functions/imaging_masks.py       Imaging phase masks per channel (stored correction,
-                                  EDOF, annular binary, flat), the mask currently shown
+functions/imaging_masks.py       Imaging phase masks per channel (a mask by name, with or
+                                  without the stored correction), the mask currently shown
+functions/mask_library.py        Reads config/mask_library/: parametric (zoned_focus,
+                                  zernike, annular) and rasterized masks
 functions/mmcore_rotator.py      PR50CC rotation stage: initialize, rotate by / to an angle
 functions/phase_masks.py         Flat masks, Zernike probe patches, raster positions
 functions/localization.py        Point-source centroid localization
@@ -64,9 +68,9 @@ experiments/                     Minimal scripts: parameters + function calls on
   psf_characterization.py          Depth stack of a guide star with a chosen phase mask
   imaging_gui.py                   napari-micromanager GUI + 'SLM phase mask', 'Timelapse'
                                     and 'Rotator' panels
-  load_phase_mask.py               Load a mask preset onto the SLM (stored correction,
-                                    EDOF, annular binary, flat), from the napari GUI or with
-                                    Micro-Manager 2.0
+  load_phase_mask.py               Load a mask onto the SLM (built-in or from the library,
+                                    with or without the stored correction), from the
+                                    napari GUI or with Micro-Manager 2.0
 calibration/                     Infrequent, complex routines
   fourier_alignment.py             Fourier-plane alignment acquisition
   fourier_refinement.py            Helpers for the refinement pass (stored centres)
@@ -86,8 +90,9 @@ tests/
   rotator_test.py                  Rotator logic and napari panel, against a simulated stage
   psf_characterization_test.py     PSF depth stack on a simulated microscope whose stage
                                     has backlash (python tests/psf_characterization_test.py)
-  imaging_masks_test.py            phase_masks.json store, imaging masks and the mask
-                                    loader on a simulated microscope
+  imaging_masks_test.py            phase_masks.json store, imaging masks, the mask
+                                    library, the mask loader and the 'SLM phase mask'
+                                    panel on a simulated microscope
                                     (python tests/imaging_masks_test.py)
   timelapse_test.py                The continuous timelapse, headless and from the GUI
                                     panel (xvfb-run -a python tests/timelapse_test.py)
@@ -349,23 +354,30 @@ Noll index), and the coefficients are printed.
 
 ## Imaging with phase masks
 
-Each channel's pupil on the SLM gets a sum of Zernike modes (same
-convention as the AO: Noll order, rad RMS), from the stored aberration
-correction and/or the extended-depth-of-field (EDOF) terms in the
-`imaging_masks` config section (primary spherical, Noll 11). The
-alternative EDOF mask is an annular binary phase mask (below), which
-can be used on its own or added to the stored correction.
-`experiments/load_phase_mask.py` loads one of six presets onto both
-channels (`imaging_masks.channels`), given as its argument:
+Each channel's pupil on the SLM gets one phase mask, chosen by name,
+optionally added to the stored aberration correction (Zernike modes,
+same convention as the AO: Noll order, rad RMS):
 
-| preset | mask |
+| mask | what it is |
 | --- | --- |
-| `aberration_correction` | stored correction (`imaging_masks.aberration_correction_method`, `spsa`) |
-| `edof` | primary spherical only (`imaging_masks.edof_zernike_rad_rms`) |
-| `aberration_correction_edof` | both, added term by term (the correction's own Noll 11 plus the EDOF amount) |
-| `annular_binary` | alternative EDOF: concentric 0 / pi rings (`imaging_masks.annular_binary_rho`) |
-| `aberration_correction_annular_binary` | the stored correction's Zernike phase plus the 0 / pi rings |
-| `flat` | completely flat |
+| `flat` | nothing (with the correction: the correction alone) |
+| `edof` | primary spherical, Noll 11 (`imaging_masks.edof_zernike_rad_rms`) |
+| `annular_binary` | concentric 0 / pi rings (`imaging_masks.annular_binary_rho`, below) |
+| `zoned_focus_3` | library: 3-zone zoned-focus mask (Phase 2 optimum) |
+| `zoned_focus_4_sweep` | library: 4-zone zoned-focus mask with per-zone focus sweep (Phase 2 best score) |
+| `spherical_defocus` | library: optimised primary spherical + defocus (Z11 + Z4) |
+| any other `<name>` | whatever else is in `config/mask_library/` (see "Mask library" below) |
+
+`experiments/load_phase_mask.py` loads one onto both channels
+(`imaging_masks.channels`): `<mask>` alone, or with
+`--aberration-correction` (`-a`) to add the stored correction
+(`imaging_masks.aberration_correction_method`, `spsa`). A mask + correction
+pair also has a one-word *preset* name, which the headless scripts take
+and which is saved with the data: the mask's name, `aberration_correction`
+(the correction alone) or `aberration_correction_<mask>` - e.g.
+`aberration_correction_edof` adds the correction's own Noll 11 to the
+EDOF amount, term by term. Run the script with no argument to list the
+masks.
 
 The same script works with the napari GUI and with Micro-Manager 2.0:
 it uses the napari GUI's core if it runs inside the GUI's process, and
@@ -381,8 +393,15 @@ is alive, so the script runs *inside* the GUI's process:
    flat mask on the SLM.
 2. Position the sample and set exposure, laser power etc. with the
    napari-micromanager widgets.
-3. Load the mask with a button in the **SLM phase mask** panel, or run
-   the script from napari's console (`%run experiments/load_phase_mask.py edof`;
+3. Load the mask from the **SLM phase mask** panel: select it in the
+   list (the built-in masks, then the library - hover for a description),
+   tick **Aberration correction** to add the stored correction to it, and
+   press **Load into SLM**. Selecting or ticking changes nothing on the SLM
+   until the button is pressed; the panel shows what is on the SLM now.
+   **Refresh list** re-reads the library folder, so a mask file dropped in
+   while the GUI runs can be loaded without restarting. Or run
+   the script from napari's console
+   (`%run experiments/load_phase_mask.py zoned_focus_3 -a`;
    with your own napari-micromanager window, give the full path). Loading
    writes nothing to disk, since swapping masks is routine; the mask is
    recorded (`slm_mask.tif` + `slm_mask_metadata.json`: preset,
@@ -399,11 +418,12 @@ Micro-Manager 2.0 instance instead, run it from a terminal while
 Micro-Manager is open:
 
 ```
-python -m experiments.load_phase_mask aberration_correction
+python -m experiments.load_phase_mask zoned_focus_3
+python -m experiments.load_phase_mask zoned_focus_4_sweep --aberration-correction
+python -m experiments.load_phase_mask spherical_defocus -a
 python -m experiments.load_phase_mask edof
 python -m experiments.load_phase_mask aberration_correction_edof
-python -m experiments.load_phase_mask annular_binary
-python -m experiments.load_phase_mask aberration_correction_annular_binary
+python -m experiments.load_phase_mask aberration_correction
 python -m experiments.load_phase_mask flat
 ```
 
@@ -415,7 +435,8 @@ pycro-manager server on port 4827") and the Generic SLM device in its
 hardware config, at `slm.resolution`. Nothing is written to disk.
 
 **Headless timelapse.** `experiments/timelapse.py` takes `PHASE_MASK`
-(one of the six presets, default `"flat"`) at the top. The mask is
+(a preset: a mask name, `aberration_correction` or
+`aberration_correction_<mask>`; default `"flat"`) at the top. The mask is
 built before any hardware is touched (so a missing correction stops the
 run before it starts), shown for the whole acquisition, and saved into
 the run folder.
@@ -440,6 +461,49 @@ the mask isn't built (before the SLM is touched). The pi step is set
 through `slm.grey_level_2pi`, like every phase in the codebase. It is an
 alternative to the Zernike EDOF terms and isn't combined with them; the
 mask info saved with each acquisition records the `rho` used.
+
+**Mask library.** Every `<name>.json` in `config/mask_library/` is a
+mask called `<name>`, listed in the panel under the file's `label`. The
+files are in the `reflex3d_phase_mask` format written by the
+PhaseMaskOptimization repository (`python scripts/export_masks.py
+--controller <this checkout>` exports its optimised masks straight into
+the folder), in one or both of two forms:
+
+- **Parametric** (`"parametric": {"type": ...}`): the design parameters,
+  evaluated analytically on each channel's pupil, so the mask is exact
+  for any pupil radius and (sub-pixel) centre:
+  - `zoned_focus`: concentric zones with edges `radii` (fractions of the
+    pupil radius), each focused at its own depth `depths_nm` with exact
+    cos(theta) defocus, plus a piston `pistons_waves` and an optional
+    focus sweep `sweeps_nm` per zone. It uses the `optical_system` (NA,
+    refractive index, wavelength) stored in the file, i.e. the one it
+    was optimised for;
+  - `zernike`: `modes`, a list of `{"n", "m", "waves_rms"}`
+    (RMS-normalized, as the AO modes);
+  - `annular`: zone edges `radii` and one constant phase per zone,
+    `phases_waves`.
+- **Rasterized** (`"raster": {"file": "<name>.npy"}`): a square matrix of
+  the unwrapped phase in waves across the pupil's bounding square
+  (element `[i, j]` at `x = (2j + 1)/N - 1` along SLM columns and
+  `y = (2i + 1)/N - 1` along SLM rows, in units of the pupil radius),
+  resampled to the pupil by nearest neighbour. This is the route for
+  free-form masks that have no parameters. A bare `<name>.npy` with no
+  `.json` is also taken as a rasterized mask.
+
+A file with both forms uses the parameters; add `"use": "raster"` to the
+`.json` to use the matrix instead. Phases are in waves (1 wave = 2 pi =
+`slm.grey_level_2pi` grey levels) and are wrapped for the SLM here. A
+file that can't be read is skipped with a warning and the rest of the
+list still loads; the names `flat`, `edof`, `annular_binary` and
+`aberration_correction...` are reserved. A mask designed for another NA
+than `fourier_plane.NA` loads with a warning. What was loaded (file,
+parameters, optics) is saved in `slm_mask_metadata.json` with each
+acquisition.
+
+The sign of the SLM phase relative to the simulation's is not known
+from the code: if a zoned mask's depth range comes out mirrored in z
+compared with the simulation (they are not symmetric about focus),
+that is the convention to flip.
 
 
 ## 3D PSF characterization

@@ -71,6 +71,10 @@ class ZernikePupil:
         rho = np.hypot(xx - cx, yy - cy) / self.radius
         theta = np.arctan2(yy - cy, xx - cx)
         self.rho = rho
+        self.theta = theta
+        # Pupil coordinates in units of the radius: x along SLM columns, y along rows.
+        self.x = (xx - cx) / self.radius
+        self.y = (yy - cy) / self.radius
         self.inside = rho <= 1.0
         self.basis = np.zeros((len(self.noll_indices), *rho.shape), np.float32)
         for k, j in enumerate(self.noll_indices):
@@ -93,7 +97,8 @@ class ZernikePupil:
         mask (in place, and returned), leaving the rest of it untouched -
         e.g. to put each channel's correction in its own pupil of one mask.
         `extra_phase` (radians, shaped like the pupil box, e.g.
-        phase_masks.annular_binary_phase(pupil.rho, ...)) is added to it.
+        phase_masks.annular_binary_phase(pupil.rho, ...) or
+        mask_library.library_phase(entry, pupil)) is added to it.
         """
         phase = self._phase(coefficients)
         if extra_phase is not None:

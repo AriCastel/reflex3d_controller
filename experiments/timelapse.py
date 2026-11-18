@@ -59,9 +59,10 @@ NUM_FRAMES = None      # None -> acquisition_defaults.timelapse.num_frames
 EXPOSURE_MS = None     # None -> acquisition_defaults.timelapse.exposure_ms
 LASER_POWER_MW = None  # None -> laser.default_power_mW
 # Headless only:
-PHASE_MASK = "flat"    # "flat", "aberration_correction", "edof", "aberration_correction_edof",
-                       # "annular_binary", "aberration_correction_annular_binary",
-                       # or None to leave the SLM as it is
+PHASE_MASK = "flat"    # a mask name: "flat", "edof", "annular_binary" or a library mask
+                       # (config/mask_library/, e.g. "zoned_focus_3"); with the stored
+                       # correction: "aberration_correction" (alone) or
+                       # "aberration_correction_<mask>"; None leaves the SLM as it is
 PREVIEW = True         # napari window with the latest frame
 # Both:
 BUFFER = None          # "ram" or "disk"; None -> acquisition_defaults.timelapse.buffer ("ram")

@@ -270,7 +270,10 @@ check_run(folder, "early_stop", n, 2000, 5.0, 20.0, "flat", "early stop")
 print("napari GUI 'Timelapse' panel")
 from napari_micromanager._gui_objects._toolbar import DOCK_WIDGETS as TOOLBAR
 from pymmcore_widgets.control._camera_roi_widget import CUSTOM_ROI, CameraRoiWidget
-from qtpy.QtWidgets import QDoubleSpinBox, QLabel, QLineEdit, QPushButton, QSpinBox
+from qtpy.QtCore import Qt
+from qtpy.QtWidgets import (
+    QCheckBox, QDoubleSpinBox, QLabel, QLineEdit, QListWidget, QPushButton, QSpinBox,
+)
 
 GUI_ROI = (16, 8, 32, 24)   # x, y, w, h - off-centre, so a wrong offset would show
 
@@ -317,7 +320,10 @@ def drive_gui():
 
     # Load the correction from the mask panel, then a full run.
     masks = viewer.window._dock_widgets["SLM phase mask"].widget()
-    next(b for b in masks.findChildren(QPushButton) if b.text() == "Aberration correction").click()
+    mask_list = masks.findChild(QListWidget)  # 'Flat' + the toggle = the correction alone
+    mask_list.setCurrentItem(mask_list.findItems("Flat (no mask)", Qt.MatchFlag.MatchExactly)[0])
+    masks.findChild(QCheckBox).setChecked(True)
+    next(b for b in masks.findChildren(QPushButton) if b.text() == "Load into SLM").click()
     pump(0.2)
     name.setText("gui run"); power.setValue(35.0); frames.setValue(25)
     reset("gui_run")

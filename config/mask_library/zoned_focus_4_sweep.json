@@ -1,0 +1,77 @@
+{
+  "format": "reflex3d_phase_mask",
+  "version": 1,
+  "name": "zoned_focus_4_sweep",
+  "label": "Zoned focus, 4 zones + sweep",
+  "description": "zoned_focus: radii=(0.524, 0.7071, 0.8794), depths_nm=(-304.7, -1822, 1444, 1940), pistons_waves=(0, -0.9959, 1.352, 0.1634), sweeps_nm=(2082, 90.58, -695.2, -3989). Phase 2 optimum: soft-min EE400 0.223, EE floor 0.174, min Strehl 0.042 over |z| <= 3 um.",
+  "phase_units": "waves",
+  "optical_system": {
+    "na": 1.1,
+    "n_medium": 1.33,
+    "wavelength_nm": 525.0
+  },
+  "parametric": {
+    "type": "zoned_focus",
+    "radii": [
+      0.5239908368146843,
+      0.7071400670443143,
+      0.8793722646728067
+    ],
+    "depths_nm": [
+      -304.7460506002617,
+      -1821.6199395307567,
+      1444.3539299191552,
+      1940.2177091519898
+    ],
+    "pistons_waves": [
+      0.0,
+      -0.9959157909768165,
+      1.3524310659145984,
+      0.16344280211693407
+    ],
+    "sweeps_nm": [
+      2081.5693391552577,
+      90.58168366048494,
+      -695.1731225667536,
+      -3989.3892955242422
+    ]
+  },
+  "raster": {
+    "file": "zoned_focus_4_sweep.npy",
+    "pixels": 1024
+  },
+  "source": {
+    "psfsim_mask": "zoned_focus",
+    "repository": "PhaseMaskOptimization",
+    "results": "docs/phase2/results.json",
+    "configuration": "zoned_focus_4_sweep",
+    "x": [
+      0.7132500186958285,
+      0.6503412881627562,
+      0.9012144547273475,
+      0.8968585133117843,
+      -304.7460506002617,
+      -1821.6199395307567,
+      1444.3539299191552,
+      1940.2177091519898,
+      -0.9959157909768165,
+      1.3524310659145984,
+      0.16344280211693407,
+      2081.5693391552577,
+      90.58168366048494,
+      -695.1731225667536,
+      -3989.3892955242422
+    ],
+    "metrics": {
+      "ee_softmin": 0.22257714170412005,
+      "ee_min": 0.17440316409192114,
+      "ee_mean": 0.2309359968619003,
+      "eta": 0.8015441422650305,
+      "strehl_min": 0.04201796930702688,
+      "ee50_max_core_nm": 1456.4762376498443,
+      "crlb_max_nm": 8.481024035372513,
+      "crlb_max_highbg_nm": 16.31662876878117,
+      "feasible": true
+    }
+  }
+}
